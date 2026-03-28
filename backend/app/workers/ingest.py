@@ -20,7 +20,7 @@ async def ingest_paper(ctx, url, workspace_id):
     # step 2 - generate embedding
     text = f"{paper_metadata['title']}. {paper_metadata.get('abstract') or ''}"
     vectors = embed_texts([text])
-    await redis.set(f"job: {job_id}:progress", 60)
+    await redis.set(f"job:{job_id}:progress", 60)
 
     # step 3 - save to DB (simulated here with a sleep)
     db = SessionLocal()

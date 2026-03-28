@@ -1,41 +1,46 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ReactFlow, Background, MiniMap, Controls, useNodesState, useEdgesState } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import PaperNode from './components/graph/PaperNode'
 import BlindSpotNode from './components/graph/BlindSpotNode'
 import PaperDetailPanel from './components/PaperDetailPanel'
-import { MOCK_GRAPH } from './mocks/graph'
 
 const nodeTypes = {
   paperNode: PaperNode,
   blindSpotNode: BlindSpotNode,
 }
 
+const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
 function App() {
   const [selectedPaper, setSelectedPaper] = useState(null as any)
+  const [nodes, _setNodes, onNodesChange] = useNodesState([])
+  const [edges, _setEdges, onEdgesChange] = useEdgesState([])
 
-  const initialNodes = MOCK_GRAPH.nodes.map((n, i) => ({
-    id: n.id,
-    type: n.is_blind_spot ? 'blindSpotNode' : 'paperNode',
-    position: { x: i * 300, y: 200 },
-    data: {
-      title: n.title,
-      year: n.year,
-      clusterColor: n.cluster_color,
-      citationCount: n.citation_count,
-      onSelect: () => setSelectedPaper(n),
-    },
-  }))
-
-  const initialEdges = MOCK_GRAPH.edges.map(e => ({
-    id: `${e.source}-${e.target}`,
-    source: e.source,
-    target: e.target,
-    style: { stroke: '#94A3B8' },
-  }))
-
-  const [nodes, _setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, _setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL}/graph/${WORKSPACE_ID}`)
+      .then(res => res.json())
+      .then(data => {
+        _setNodes(data.nodes.map((n, i) => ({
+          id: n.id,
+          type: n.is_blind_spot ? 'blindSpotNode' : 'paperNode',
+          position: { x: i * 300, y: 200 },
+          data: {
+            title: n.title,
+            year: n.year,
+            clusterColor: n.cluster_color,
+            citationCount: n.citation_count,
+            onSelect: () => setSelectedPaper(n),
+          },
+        })))
+        _setEdges(data.edges.map(e => ({
+          id: `${e.source}-${e.target}`,
+          source: e.source,
+          target: e.target,
+          style: { stroke: '#94A3B8' },
+        })))
+      })
+  }, [])
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#0f172a' }}>
