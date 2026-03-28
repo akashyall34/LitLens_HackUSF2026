@@ -50,7 +50,9 @@ UI components	shadcn/ui + Tailwind CSS	Own the code, Radix UI accessibility, mod
 Icons	Lucide React	Same ecosystem as shadcn/ui
 Animations	Framer Motion	Panel open/close transitions, graph state changes
 Real-time	WebSockets + Yjs	CRDTs without building from scratch
-Embeddings	Gemini text-embedding-004	Free via Google AI Studio, 768 dimensions
+Embeddings	Gemini gemini-embedding-2-preview	Free via Google AI Studio, 768 dimensions
+LLM + Agents	Gemini 2.0 Flash via Google ADK	Free tier, powers all agents and LLM generation; ADK provides sub_agent routing and built-in test UI
+Multi-agent	Google ADK	Purpose-built agent framework for Gemini; declarative Agent definition, sub_agents, automatic tool-use loop
 Clustering	scikit-learn (HDBSCAN)	Handles variable cluster sizes better than k-means for papers
 External APIs	Semantic Scholar + arXiv	Free, reliable, citation data nobody else surfaces this way
 Frontend deploy	Vercel	Simpler than S3+CloudFront for React, free tier sufficient
@@ -139,7 +141,7 @@ CREATE TABLE papers (
 -- Embeddings via pgvector
 CREATE TABLE paper_embeddings (
   paper_id    UUID REFERENCES papers(id) PRIMARY KEY,
-  embedding   vector(768),             -- Gemini text-embedding-004
+  embedding   vector(768),             -- Gemini gemini-embedding-2-preview
   chunk_index INT DEFAULT 0            -- 0 = abstract, 1+ = full text chunks
 );
 CREATE INDEX ON paper_embeddings USING ivfflat (embedding vector_cosine_ops);
@@ -267,21 +269,53 @@ Input: arXiv URL / DOI / search query
          │
          ▼
 3. Generate embeddings
-   └── Gemini text-embedding-004
+   └── Gemini gemini-embedding-2-preview
        Input: f"{title}. {abstract}"
        Output: vector(768) → stored in paper_embeddings
 
          │
          ▼
 4. Classify edge types (async, runs after all papers ingested)
-   └── For each citation edge:
-       Prompt: "Given paper A abstract and paper B abstract,
-                classify: extends | contradicts | uses_dataset | cites"
-       Store confidence score
+   └── Batch 20 citation pairs per gemini-2.5-flash call:
+       Prompt: "Classify the relationship for each pair below.
+                Return a JSON array of {n} objects with edge_type and confidence."
+       Never one call per edge — prevents hitting the 15 RPM free-tier limit
 
          │
          ▼
 5. Emit completion event → WebSocket → frontend re-renders graph
+
+8.1 ADK IngestionAgent
+The ingestion pipeline runs inside a Google ADK agent. The arq background worker delegates to it:
+
+```python
+from google.adk.agents import Agent
+from app.agents.tools.ingest_tools import (
+    fetch_arxiv_paper, fetch_semantic_scholar_data,
+    generate_paper_embedding, store_paper, store_citation
+)
+
+ingestion_agent = Agent(
+    name="ingestion_agent",
+    model="gemini-2.5-flash",
+    instruction="""You are a paper ingestion specialist for LitLens.
+Given an arXiv URL and workspace_id, work through these steps in order:
+1. fetch_arxiv_paper — title, abstract, authors, year, arxiv_id
+2. fetch_semantic_scholar_data — semantic_id, citation_count, references list
+3. generate_paper_embedding — 768-dim vector for the paper
+4. store_paper — persist all metadata + embedding to DB, add to workspace
+5. store_citation — for each reference, create a citation edge
+Confirm with a summary of what was stored.""",
+    tools=[fetch_arxiv_paper, fetch_semantic_scholar_data,
+           generate_paper_embedding, store_paper, store_citation]
+)
+
+# arq worker — delegates to the agent
+async def ingest_paper(ctx, url: str, workspace_id: str):
+    result = await run_agent(ingestion_agent, f"Ingest into workspace {workspace_id}: {url}")
+    return result
+```
+
 Rate limiting strategy for external APIs:
 * Semantic Scholar: 100 req/5min unauthenticated, 1 req/sec with API key (get the key, it's free)
 * arXiv: No hard limit but be polite — 3 req/sec max
@@ -372,33 +406,60 @@ def detect_semantic_gaps(workspace_id: str, db: Session) -> list[SemanticGap]:
     return sorted(gaps, key=lambda x: x.coverage_score)
 
 
-def generate_cluster_label(papers: list[Paper]) -> str:
-    # Feed top 5 paper titles + abstracts to LLM
-    prompt = f"""
-    These {len(papers)} academic papers form a coherent topic cluster.
-    Give a 2-4 word label for this topic cluster.
-    Papers: {format_papers(papers[:5])}
-    Return only the label, nothing else.
-    """
-    return call_llm(prompt)
+def label_all_clusters(clusters: list[dict], workspace_titles: list[str]) -> list[dict]:
+    # One call for ALL clusters — not one per cluster. Reduces 2N calls to 1.
+    cluster_summaries = "\n".join(
+        f'Cluster {c["id"]}: {", ".join(p["title"] for p in c["papers"][:5])}'
+        for c in clusters
+    )
+    prompt = f"""A researcher has read: {", ".join(workspace_titles[:5])}
 
+Topic clusters of papers they haven't read:
+{cluster_summaries}
 
-def generate_why_matters(cluster_papers: list, workspace_id: str) -> str:
-    workspace_papers = get_workspace_papers(workspace_id)
-    prompt = f"""
-    A researcher has read these papers: {format_titles(workspace_papers[:5])}
-    They have not read papers on: {get_cluster_label(cluster_papers)}
-    In one sentence, explain why this gap matters for their research.
-    """
-    return call_llm(prompt)
+For EACH cluster return a 2-4 word label and one-sentence why_matters explanation.
+Return JSON array: [{{"cluster_id": 0, "label": "...", "why_matters": "..."}}, ...]
+Return only the JSON array."""
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    return json.loads(response.text)
 Output: "Your papers frequently cite work on Mechanistic Interpretability but you have zero direct coverage of this topic — here are the 3 most important papers to read."
+
+9.3 ADK GapDetectionAgent
+Both detection layers are orchestrated by a single ADK agent with tool functions that implement each algorithm step:
+
+```python
+from google.adk.agents import Agent
+from app.agents.tools.gap_tools import (
+    get_workspace_papers, find_citation_gaps, get_candidate_embeddings,
+    run_hdbscan_clustering, compute_cluster_coverage,
+    generate_cluster_label, generate_why_matters, store_blind_spots
+)
+
+gap_detection_agent = Agent(
+    name="gap_detection_agent",
+    model="gemini-2.5-flash",
+    instruction="""You are a research gap detection specialist for LitLens.
+Given a workspace_id, run the full pipeline in order:
+1. get_workspace_papers — what the researcher has read
+2. find_citation_gaps — Layer 1: papers cited ≥2 times but unread
+3. get_candidate_embeddings — embeddings for citation gap papers
+4. run_hdbscan_clustering — cluster the candidate embedding space
+5. compute_cluster_coverage — coverage score per cluster vs workspace
+6. For clusters with coverage < 0.65: generate_cluster_label + generate_why_matters
+7. store_blind_spots — persist all findings
+Return: "Found N citation gaps and M semantic gaps." """,
+    tools=[get_workspace_papers, find_citation_gaps, get_candidate_embeddings,
+           run_hdbscan_clustering, compute_cluster_coverage,
+           generate_cluster_label, generate_why_matters, store_blind_spots]
+)
+```
 
 10. RAG Query Layer
 Query: "what do my papers say about hallucination?"
          │
          ▼
 1. Embed the query
-   └── Gemini text-embedding-004 → vector(768)
+   └── Gemini gemini-embedding-2-preview → vector(768)
 
          │
          ▼
@@ -422,7 +483,7 @@ Query: "what do my papers say about hallucination?"
    System: "You are a research assistant. Answer only from the provided papers.
             Always cite which paper each claim comes from."
    User:   "{query}\n\nContext:\n{chunks}"
-   Model:  gemini-1.5-flash (free tier, fast, sufficient)
+   Model:  gemini-2.5-flash via ResearchAgent (free tier, fast, sufficient)
 
          │
          ▼
@@ -435,6 +496,47 @@ Query: "what do my papers say about hallucination?"
      ]
    }
 Latency target: p95 < 300ms for vector search, < 3s total with LLM generation
+
+10.1 ADK ResearchAgent
+The RAG pipeline runs as an ADK agent — the agent decides which papers to retrieve and synthesizes the answer:
+
+```python
+from google.adk.agents import Agent
+from app.agents.tools.rag_tools import embed_query, semantic_search, get_paper_details
+
+research_agent = Agent(
+    name="research_agent",
+    model="gemini-2.5-flash",
+    instruction="""You are a research assistant for LitLens.
+Answer questions grounded exclusively in the user's workspace papers.
+1. embed_query — convert the question to a 768-dim vector
+2. semantic_search — retrieve the top 8 relevant chunks from the workspace
+3. get_paper_details — look up any paper you want to cite
+4. Synthesize a clear answer citing papers as [Paper Title]
+Never state anything not supported by the retrieved chunks.""",
+    tools=[embed_query, semantic_search, get_paper_details]
+)
+```
+
+10.2 Multi-Agent Orchestrator
+A top-level ADK orchestrator routes all requests to the appropriate specialist agent:
+
+```python
+from google.adk.agents import Agent
+
+orchestrator = Agent(
+    name="litlens_orchestrator",
+    model="gemini-2.5-flash",
+    instruction="""You are the LitLens orchestrator. Route user requests immediately:
+- Paper ingestion (arXiv URLs, DOIs, search queries) → ingestion_agent
+- Gap detection and blind spot analysis → gap_detection_agent
+- Research questions about workspace papers → research_agent
+Delegate immediately — do not attempt to answer yourself.""",
+    sub_agents=[ingestion_agent, gap_detection_agent, research_agent]
+)
+```
+
+Run `adk web` from the backend directory to interactively test all agents during development.
 
 11. Collaboration Layer (Yjs + WebSockets)
 How Yjs works in this context
@@ -551,6 +653,7 @@ Goal: All three systems running and talking to each other before writing feature
 * React + Vite scaffold with shadcn/ui + Tailwind CSS initialized
 * React Flow rendering hardcoded test nodes and edges
 * .env contract agreed across backend and frontend
+* Google ADK installed; IngestionAgent, GapDetectionAgent, ResearchAgent, and Orchestrator defined with empty tool stubs; `adk web` confirms routing
 End of week checkpoint: Paste one arXiv URL → paper metadata appears in database.
 
 Week 2 — Core Pipeline
@@ -641,7 +744,7 @@ Goal: The project presents itself.
 * Prepare 3-4 technical talking points for interviews (Section 16)
 
 15. Resume Bullet
-"Built LitLens, a production-grade research knowledge graph platform — FastAPI on AWS EC2, pgvector on RDS, ElastiCache (Redis), paper artifacts on S3 — detecting literature blind spots via citation gap analysis (Semantic Scholar API) and semantic topic clustering over paper embeddings (HDBSCAN + Gemini text-embedding-004), real-time collaborative graph annotation via Yjs CRDTs, and RAG queries grounded in user papers (Gemini 1.5 Flash) — used by 30+ USF researchers with p95 query latency <300ms"
+"Built LitLens, a production-grade research knowledge graph platform — FastAPI on AWS EC2, pgvector on RDS, ElastiCache (Redis), paper artifacts on S3 — detecting literature blind spots via citation gap analysis (Semantic Scholar API) and semantic topic clustering over paper embeddings (HDBSCAN + Gemini gemini-embedding-2-preview), Google ADK multi-agent orchestration (IngestionAgent → GapDetectionAgent → ResearchAgent via Gemini 2.0 Flash), real-time collaborative graph annotation via Yjs CRDTs, and RAG queries grounded in user papers — used by 30+ USF researchers with p95 query latency <300ms"
 
 16. Interview Talking Points
 These are the four technical areas where an interviewer will dig in. Prepare 3-5 minutes on each.
@@ -652,7 +755,9 @@ These are the four technical areas where an interviewer will dig in. Prepare 3-5
 16.3 Yjs CRDTs for collaboration
 "The real-time collaboration problem is hard because two users editing the same graph annotation simultaneously need their changes to merge correctly. I used Yjs, which implements CRDTs — Conflict-free Replicated Data Types. The key property is that no matter what order operations arrive in, they always converge to the same state. For edge type annotations, that means two people can both update the same edge simultaneously and the result is deterministic. I didn't build the CRDT — Yjs does that — but I had to understand the data model well enough to structure the shared document correctly and handle the persistence (saving Yjs snapshots to PostgreSQL so the state survives server restarts)."
 16.4 RAG latency optimization
-"My target was p95 < 300ms for the vector search component. The main levers were: using an IVFFlat index on pgvector (approximate nearest neighbor, much faster than exact search at the cost of a small accuracy tradeoff), pre-filtering the embedding search to only papers in the current workspace (reducing the search space dramatically), and batching embedding generation at ingestion time so query time never needs to call the OpenAI embeddings API. The LLM generation step (gpt-4o-mini) adds 1-2 seconds on top of that, but I separate the latency reporting so I can show the vector retrieval is fast even when the generation step is not."
+"My target was p95 < 300ms for the vector search component. The main levers were: using an IVFFlat index on pgvector (approximate nearest neighbor, much faster than exact search at the cost of a small accuracy tradeoff), pre-filtering the embedding search to only papers in the current workspace (reducing the search space dramatically), and batching embedding generation at ingestion time so query time never needs to call the embeddings API at query time. The LLM generation step adds 1-2 seconds on top, but I separate the latency reporting so I can show the vector retrieval is fast even when generation is not."
+16.5 Google ADK Multi-Agent Architecture
+"I structured LitLens as three specialized agents — IngestionAgent, GapDetectionAgent, and ResearchAgent — coordinated by a top-level Orchestrator. I used Google ADK because it provides a clean declarative way to define agents and their tools, built-in sub_agent routing so the orchestrator can delegate without manual intent parsing, and a browser-based test UI (`adk web`) that let me verify the routing before any tool implementations existed. The key architectural decision was keeping all agents stateless — they read and write to the database but carry no in-memory state between calls. That means any agent call can fail and retry safely, which matters when you're doing 5+ sequential API calls in the ingestion pipeline. The GapDetectionAgent is the most interesting because it has to decide which clusters cross the coverage threshold — it's not just a pipeline, it's reasoning over the clustering results before deciding what to store."
 
 17. Metrics That Go On Your Resume
 Fill these in after Week 7:
@@ -669,6 +774,7 @@ p95 total RAG query latency	<3s	__
 Feature	What it signals
 pgvector + embedding pipeline	You understand vector search and AI infrastructure end-to-end
 HDBSCAN semantic gap detection	You can design novel algorithms, not just glue APIs together
+Google ADK multi-agent system	You can architect and build production multi-agent AI systems
 Yjs CRDTs	You've solved a genuinely hard distributed systems problem
 Real users + tracked metrics	You shipped something people actually used and measured it
 FastAPI + PostgreSQL + Redis	Standard production backend stack, not toy tutorial code

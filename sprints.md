@@ -11,7 +11,7 @@
 
 By the end of this roadmap your resume line reads:
 
-*"Built LitLens — a production-grade literature blind spot detection platform on AWS (EC2 t2.micro, RDS + pgvector, ElastiCache, S3, SES) with a semantic knowledge graph (React Flow + Yjs CRDTs), citation gap analysis via Semantic Scholar API, HDBSCAN embedding clustering for conceptual gap detection (Gemini text-embedding-004), RAG queries grounded in user papers via Gemini 1.5 Flash (p95 <300ms vector search), and real-time collaborative annotation. Used by 30+ USF researchers."*
+*"Built LitLens — a production-grade literature blind spot detection platform on AWS (EC2 t2.micro, RDS + pgvector, ElastiCache, S3, SES) with a semantic knowledge graph (React Flow + Yjs CRDTs), citation gap analysis via Semantic Scholar API, HDBSCAN embedding clustering for conceptual gap detection (Gemini gemini-embedding-2-preview), Google ADK multi-agent orchestration (IngestionAgent → GapDetectionAgent → ResearchAgent), RAG queries grounded in user papers via Gemini 2.0 Flash (p95 <300ms vector search), and real-time collaborative annotation. Used by 30+ USF researchers."*
 
 ---
 
@@ -19,7 +19,7 @@ By the end of this roadmap your resume line reads:
 
 **The Goal:** All three systems (backend, database, frontend) are running locally and talking to each other before a single feature is built. No skipping this — a bad foundation costs 10x later.
 
-**Resume Keywords Added:** FastAPI, PostgreSQL, pgvector, React, Vite, shadcn/ui, Tailwind CSS, Docker Compose, REST API design
+**Resume Keywords Added:** FastAPI, PostgreSQL, pgvector, React, Vite, shadcn/ui, Tailwind CSS, Docker Compose, REST API design, Google ADK, multi-agent systems
 
 ---
 
@@ -47,6 +47,8 @@ By the end of this roadmap your resume line reads:
 
 **US 1.9 [E2]:** As a developer, given a `semantic_id` I can call a Python function that returns `{citation_count, venue, references[]}` from the Semantic Scholar API so citation graph fetching is proven before ingestion is wired up.
 
+**US 1.10 [E1]:** As a developer, the Google ADK agent skeleton is set up with `IngestionAgent`, `GapDetectionAgent`, `ResearchAgent`, and `OrchestratorAgent` defined (with empty tool stubs and system prompts) and `adk web` confirms the orchestrator routes correctly so the agent architecture is proven before any tool implementations are written. *Install: `pip install google-adk`*
+
 ---
 
 ### Technical Execution Checklist
@@ -60,6 +62,12 @@ litlens/
 │   │   ├── db.py            # SQLAlchemy session + engine
 │   │   ├── models.py        # ORM models matching schema
 │   │   ├── routers/         # one file per feature area
+│   │   ├── agents/
+│   │   │   ├── ingestion_agent.py    # ADK IngestionAgent [E1]
+│   │   │   ├── gap_detection_agent.py  # ADK GapDetectionAgent [E1]
+│   │   │   ├── research_agent.py     # ADK ResearchAgent [E1]
+│   │   │   ├── orchestrator.py       # ADK Orchestrator [E1]
+│   │   │   └── tools/               # tool functions called by agents
 │   │   └── clients/
 │   │       ├── arxiv.py     # arXiv API client [E2]
 │   │       └── semantic_scholar.py  # Semantic Scholar client [E2]
@@ -119,6 +127,27 @@ const testNodes = [
 - Add `X-API-KEY` header to all requests
 - Implement a simple `asyncio.sleep(1)` between requests in the client
 
+**ADK agent skeleton (E1 owns, US 1.10):**
+```python
+# backend/app/agents/orchestrator.py
+from google.adk.agents import Agent
+from app.agents.ingestion_agent import ingestion_agent
+from app.agents.gap_detection_agent import gap_detection_agent
+from app.agents.research_agent import research_agent
+
+orchestrator = Agent(
+    name="litlens_orchestrator",
+    model="gemini-2.5-flash",
+    instruction="""You are the LitLens orchestrator. Route user requests to the correct specialist:
+- Paper ingestion (arXiv URLs, DOIs, search queries) → ingestion_agent
+- Gap detection and blind spot analysis → gap_detection_agent
+- Research questions about workspace papers → research_agent
+Delegate immediately — do not attempt to answer yourself.""",
+    sub_agents=[ingestion_agent, gap_detection_agent, research_agent]
+)
+```
+Run `adk web` from the `backend/` directory to open the browser-based agent tester. Confirm the orchestrator delegates to the correct sub-agent before building any tool implementations.
+
 ---
 
 **Definition of Done:** `docker-compose up` starts Postgres + Redis. `uvicorn app.main:app` returns `{"status":"ok"}` at `/health`. All SQL migrations run without error. React dev server renders a graph with one yellow PaperNode and one red dashed BlindSpotNode. Both engineers can run the full stack locally using only `.env.example` as a reference.
@@ -129,7 +158,7 @@ const testNodes = [
 
 **The Goal:** A user can paste arXiv links and see a real citation graph in the browser. This is the end-to-end spine of the entire product — every other feature is built on top of it.
 
-**Resume Keywords Added:** Async job queues, Redis + arq, Gemini Embeddings API, pgvector, Semantic Scholar citation graph, React Flow, k-means clustering
+**Resume Keywords Added:** Async job queues, Redis + arq, Gemini Embeddings API, pgvector, Semantic Scholar citation graph, React Flow, k-means clustering, Google ADK, IngestionAgent
 
 ---
 
@@ -151,7 +180,7 @@ const testNodes = [
 
 **US 2.1 [E1]:** As a user, I can submit an arXiv URL via `POST /ingest/url` and receive a `job_id` immediately so the UI stays responsive while ingestion runs in the background.
 
-**US 2.2 [E1]:** As a developer, the ingestion pipeline generates `text-embedding-004` embeddings for each paper's `"{title}. {abstract}"` string and stores the resulting `vector(768)` in `paper_embeddings` so vector search is possible.
+**US 2.2 [E1]:** As a developer, the ingestion pipeline generates `gemini-embedding-2-preview` embeddings for each paper's `"{title}. {abstract}"` string and stores the resulting `vector(768)` in `paper_embeddings` so vector search is possible.
 
 **US 2.3 [E1]:** As a developer, the async job queue is implemented with Redis + `arq` so ingestion jobs run as background workers and never block the FastAPI request thread.
 
@@ -166,36 +195,35 @@ const testNodes = [
 **arq job worker setup (E1 owns):**
 ```python
 # backend/app/workers/ingest.py
+from app.agents.ingestion_agent import ingestion_agent, run_agent
+
 async def ingest_paper(ctx, url: str, workspace_id: str):
-    # 1. Fetch metadata from arXiv
-    paper = await arxiv_client.fetch(url)
-    # 2. Fetch citations from Semantic Scholar (1 hop, up to 100)
-    citations = await semantic_scholar_client.fetch_references(paper.semantic_id)
-    # 3. Store paper + citation edges in DB
-    await db.upsert_paper(paper)
-    await db.upsert_citations(citations)
-    # 4. Generate embeddings (batch up to 100 per Gemini call)
-    embedding = await gemini_client.embed(f"{paper.title}. {paper.abstract}")
-    await db.store_embedding(paper.id, embedding)
-    # 5. Add to workspace
-    await db.add_to_workspace(paper.id, workspace_id)
+    # Delegate entirely to the ADK IngestionAgent
+    # The agent handles: fetch → citations → embed → store, in order
+    result = await run_agent(
+        ingestion_agent,
+        message=f"Ingest this paper into workspace {workspace_id}: {url}",
+        context={"workspace_id": workspace_id}
+    )
+    return result
 ```
 
 **Gemini batching strategy (E1 owns):**
-- Use `embed_content` with `task_type="RETRIEVAL_DOCUMENT"` for ingestion, `task_type="RETRIEVAL_QUERY"` for RAG queries
 - Batch up to 100 texts per call to stay well within the 1,500 req/day free tier limit
 - Store embeddings immediately — never re-embed on query
+- Use `google-genai` SDK directly for embeddings (ADK handles LLM calls; embeddings are a separate utility)
 ```python
-import google.generativeai as genai
-genai.configure(api_key=GEMINI_API_KEY)
+from google import genai
 
-async def embed_texts(texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
-    result = genai.embed_content(
-        model="models/text-embedding-004",
-        content=texts,
-        task_type=task_type
+_client = genai.Client(api_key=GEMINI_API_KEY)
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Batch embed up to 100 texts using Gemini gemini-embedding-2-preview."""
+    response = _client.models.embed_content(
+        model="gemini-embedding-2-preview",
+        contents=texts,
     )
-    return result["embedding"]  # list of 768-dim vectors
+    return [e.values for e in response.embeddings]
 ```
 
 **Graph endpoint response shape (E2 owns):**
@@ -253,7 +281,7 @@ export const MOCK_GRAPH = {
 
 **The Goal:** The killer feature works end-to-end. A researcher adds papers and the system tells them — with explanation — what foundational work they're missing and what conceptual territory they've never engaged with.
 
-**Resume Keywords Added:** HDBSCAN clustering, cosine similarity, semantic gap detection, citation graph analysis, LLM-generated explanations, pgvector, scikit-learn
+**Resume Keywords Added:** HDBSCAN clustering, cosine similarity, semantic gap detection, citation graph analysis, LLM-generated explanations, pgvector, scikit-learn, Google ADK, GapDetectionAgent
 
 ---
 
@@ -273,9 +301,9 @@ export const MOCK_GRAPH = {
 
 **US 3.1 [E1] (develop against fixture, integrate after US 3.6):** As a developer, Layer 2 semantic gap detection runs correctly — HDBSCAN clusters the candidate embedding space, coverage is measured per cluster via cosine similarity, and clusters with coverage < 0.65 are flagged as conceptual blind spots.
 
-**US 3.2 [E1]:** As a user, each semantic gap cluster is assigned a 2–4 word LLM-generated label (e.g. "Mechanistic Interpretability", "Tool Use & Guardrails") by feeding the top 5 paper titles and abstracts in that cluster to `gemini-1.5-flash`.
+**US 3.2 [E1]:** As a user, all semantic gap clusters are labeled in a single `gemini-2.5-flash` call — all cluster summaries are passed together and the model returns a JSON array of `{cluster_id, label}` objects — so N clusters costs 1 API call, not N.
 
-**US 3.3 [E1]:** As a user, each gap card shows a one-sentence `why_matters` explanation generated by LLM that connects the gap to the user's existing papers so I immediately understand why this gap is relevant to my research.
+**US 3.3 [E1]:** As a user, all `why_matters` explanations are generated in the same single LLM call as US 3.2 — the model returns `{cluster_id, label, why_matters}` for every cluster at once — reducing 2N calls to exactly 1.
 
 **US 3.4 [E1]:** As a user, `POST /gaps/{workspace_id}/detect` kicks off a full gap detection run as a background job and returns a `job_id` so the UI can poll for completion.
 
@@ -350,14 +378,58 @@ def detect_semantic_gaps(workspace_id, db):
     return sorted(gaps, key=lambda x: x.coverage_score)
 ```
 
-**LLM prompt for cluster labeling (E1 owns):**
+**LLM prompt for cluster labeling + why_matters — consolidated (E1 owns):**
 ```python
-prompt = f"""
-These {len(papers)} academic papers form a coherent topic cluster.
-Give a 2-4 word label for this cluster.
-Papers: {format_papers(papers[:5])}
-Return only the label, nothing else.
-"""
+# One call for ALL clusters — not one per cluster
+def label_all_clusters(clusters: list[dict], workspace_titles: list[str]) -> list[dict]:
+    cluster_summaries = "\n".join(
+        f'Cluster {c["id"]}: {", ".join(p["title"] for p in c["papers"][:5])}'
+        for c in clusters
+    )
+    prompt = f"""A researcher has read these papers: {", ".join(workspace_titles[:5])}
+
+These are topic clusters of papers they haven't read:
+{cluster_summaries}
+
+For EACH cluster return:
+- label: a 2-4 word topic label (e.g. "Mechanistic Interpretability")
+- why_matters: one sentence explaining why this gap matters given the researcher's papers
+
+Return a JSON array: [{{"cluster_id": 0, "label": "...", "why_matters": "..."}}, ...]
+Return only the JSON array, nothing else."""
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    return json.loads(response.text)  # all N clusters in one call
+```
+
+**ADK GapDetectionAgent definition (E1 owns):**
+```python
+# backend/app/agents/gap_detection_agent.py
+from google.adk.agents import Agent
+from app.agents.tools.gap_tools import (
+    get_workspace_papers, find_citation_gaps, get_candidate_embeddings,
+    run_hdbscan_clustering, compute_cluster_coverage,
+    generate_cluster_label, generate_why_matters, store_blind_spots
+)
+
+gap_detection_agent = Agent(
+    name="gap_detection_agent",
+    model="gemini-2.5-flash",
+    instruction="""You are a research gap detection specialist for LitLens.
+Given a workspace_id, run the full blind spot detection pipeline in order:
+1. get_workspace_papers — retrieve what the researcher has read
+2. find_citation_gaps — Layer 1: papers cited ≥2 times but not in workspace
+3. get_candidate_embeddings — embeddings for all citation gap papers
+4. run_hdbscan_clustering — cluster the candidate embedding space
+5. compute_cluster_coverage — for each cluster, measure how well workspace papers cover it
+6. For clusters with coverage < 0.65: call generate_cluster_label then generate_why_matters
+7. store_blind_spots — persist all citation gaps and semantic gaps
+Finish with: "Found N citation gaps and M semantic gaps." """,
+    tools=[
+        get_workspace_papers, find_citation_gaps, get_candidate_embeddings,
+        run_hdbscan_clustering, compute_cluster_coverage,
+        generate_cluster_label, generate_why_matters, store_blind_spots,
+    ]
+)
 ```
 
 **Mock gaps response for E1 BlindSpotPanel (use until US 3.7 is ready):**
@@ -391,7 +463,7 @@ export const MOCK_GAPS = {
 
 **The Goal:** The product stops being a graph viewer and becomes a research assistant. Researchers can ask questions about their papers, see how papers relate intellectually, and generate related work drafts.
 
-**Resume Keywords Added:** RAG (Retrieval-Augmented Generation), pgvector similarity search, IVFFlat indexing, LLM prompting, semantic edge classification, p95 latency tracking, Gemini 1.5 Flash
+**Resume Keywords Added:** RAG (Retrieval-Augmented Generation), pgvector similarity search, IVFFlat indexing, LLM prompting, semantic edge classification, p95 latency tracking, Gemini 2.0 Flash, Google ADK, ResearchAgent
 
 ---
 
@@ -399,13 +471,13 @@ export const MOCK_GAPS = {
 
 **US 4.1 [E1]:** As a user, I can type a natural language question into the `RAGQueryBox` at the bottom of the workspace and receive a cited answer grounded exclusively in my workspace papers.
 
-**US 4.2 [E1]:** As a developer, the RAG pipeline embeds the query using `text-embedding-004`, runs a pgvector `<=>` cosine similarity search scoped to the workspace (top 8 chunks), builds a context window under 6000 tokens, and calls `gemini-1.5-flash` for answer generation.
+**US 4.2 [E1]:** As a developer, the RAG pipeline embeds the query using `gemini-embedding-2-preview`, runs a pgvector `<=>` cosine similarity search scoped to the workspace (top 8 chunks), builds a context window under 6000 tokens, and calls `gemini-2.5-flash` for answer generation.
 
 **US 4.3 [E1]:** As a developer, the IVFFlat index on `paper_embeddings` is used for approximate nearest-neighbor search so p95 vector search latency stays under 300ms even as the workspace grows.
 
 **US 4.4 [E1]:** As a user, React Flow edges are styled by their classified type: `extends` (teal #4ECDC4), `contradicts` (red #FF6B6B, dashed), `uses_dataset` (purple #A78BFA), `cites` (gray #94A3B8), with a small inline label so paper relationships are visually meaningful.
 
-**US 4.5 [E2]:** As a developer, each citation edge is classified as `extends | contradicts | uses_dataset | cites` via `gemini-1.5-flash` using both paper abstracts as context, with a confidence score stored in the `citations` table.
+**US 4.5 [E2]:** As a developer, citation edges are classified as `extends | contradicts | uses_dataset | cites` in batches of 20 pairs per `gemini-2.5-flash` call — not one call per edge — returning a structured JSON array so the 15 RPM free-tier limit is never hit even on large workspaces.
 
 **US 4.6 [E2]:** As a user, I can select a cluster on the graph and trigger a "Generate Related Work" action that produces a 2-paragraph related work section draft citing the papers in that cluster.
 
@@ -427,38 +499,58 @@ ORDER BY pe.embedding <=> $1::vector
 LIMIT 8;
 ```
 
-**RAG LLM call (E1 owns):**
+**ADK ResearchAgent definition (E1 owns):**
 ```python
-import google.generativeai as genai
+# backend/app/agents/research_agent.py
+from google.adk.agents import Agent
+from app.agents.tools.rag_tools import embed_query, semantic_search, get_paper_details
 
-model = genai.GenerativeModel("gemini-1.5-flash")
+research_agent = Agent(
+    name="research_agent",
+    model="gemini-2.5-flash",
+    instruction="""You are a research assistant for LitLens.
+Answer questions grounded exclusively in the user's workspace papers.
+Steps:
+1. embed_query — convert the user's question to a vector
+2. semantic_search — retrieve the top 8 relevant chunks from their workspace
+3. get_paper_details — look up any paper you want to cite by ID
+4. Synthesize a clear, concise answer citing papers as [Paper Title]
+Never state anything not supported by the retrieved chunks.
+If the answer isn't in the papers, say so explicitly.""",
+    tools=[embed_query, semantic_search, get_paper_details]
+)
 
-prompt = f"""You are a research assistant. Answer only from the provided papers.
-Cite every claim with the paper title in brackets like [Paper Title].
-
-Question: {query}
-
-Context:
-{format_chunks(top_chunks)}"""
-
-response = model.generate_content(prompt)
-answer = response.text
+# In the router: result = await run_agent(research_agent, query, context={"workspace_id": workspace_id})
 ```
 
-**Edge classification prompt (E2 owns):**
+**Edge classification prompt — batched (E2 owns):**
 ```python
-prompt = f"""
-Paper A: {paper_a.title}. {paper_a.abstract[:300]}
-Paper B: {paper_b.title}. {paper_b.abstract[:300]}
-
-Paper A cites Paper B. Classify the relationship:
+# Chunk edges into batches of 20 — never one call per edge
+def classify_edges_batch(edges: list[tuple[Paper, Paper]]) -> list[dict]:
+    pairs = "\n".join(
+        f'{i+1}. A="{e[0].title[:80]}. {e[0].abstract[:200]}" '
+        f'B="{e[1].title[:80]}. {e[1].abstract[:200]}"'
+        for i, e in enumerate(edges)
+    )
+    prompt = f"""Classify the citation relationship for each pair below.
+Relationships: extends | contradicts | uses_dataset | cites
 - extends: A builds directly on B's method or framework
 - contradicts: A challenges or disputes B's findings
 - uses_dataset: A uses the same dataset as B
 - cites: general citation, none of the above
 
-Return JSON: {{"edge_type": "...", "confidence": 0.0-1.0}}
-"""
+Pairs:
+{pairs}
+
+Return a JSON array of {len(edges)} objects: [{{"index": 1, "edge_type": "...", "confidence": 0.0-1.0}}, ...]
+Return only the JSON array, nothing else."""
+    # gemini-2.5-flash natively outputs structured JSON
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    return json.loads(response.text)
+
+# Usage: process in chunks of 20
+for chunk in [edges[i:i+20] for i in range(0, len(edges), 20)]:
+    results = classify_edges_batch(chunk)
 ```
 
 **Latency targets:**
@@ -503,7 +595,7 @@ Write in academic style. Cite papers by title in brackets.
 
 **US 5.9 [E2]:** As a user, the BlindSpotPanel shows a "Team Coverage" section aggregating gaps across all workspace members so the team sees their collective literature blind spots, not just individual ones.
 
-**US 5.10 [E2]:** As a developer, Yjs document snapshots are serialized and persisted to S3 on WebSocket disconnect so collaboration state (edge annotations, comments) survives server restarts.
+**US 5.10 [E2]:** As a developer, Yjs document snapshots are serialized and persisted to S3 on WebSocket disconnect **and** on a 60-second periodic background interval so collaboration state (edge annotations, comments) survives abrupt container restarts during CI/CD deploys, not just graceful disconnects.
 
 **US 5.11 [E2]:** As a user, when I invite a collaborator by email they receive a workspace invite email via AWS SES with a direct join link so they don't need to navigate the app to find the workspace.
 
@@ -547,11 +639,19 @@ async def websocket_endpoint(websocket: WebSocket, workspace_id: str, token: str
     user = verify_jwt(token)  # 401 close if invalid
     await websocket.accept()
     ydoc = await load_ydoc_from_s3(workspace_id)
+
+    async def periodic_save():
+        while True:
+            await asyncio.sleep(60)  # save every 60s — survives abrupt docker restart
+            await save_ydoc_to_s3(workspace_id, ydoc)
+
+    save_task = asyncio.create_task(periodic_save())
     async with ypy_websocket.WebsocketProvider(ydoc, websocket):
         try:
             await websocket.wait_for_disconnect()
         finally:
-            await save_ydoc_to_s3(workspace_id, ydoc)
+            save_task.cancel()
+            await save_ydoc_to_s3(workspace_id, ydoc)  # final save on graceful disconnect
 ```
 
 **Frontend Yjs wiring (E1 owns):**
@@ -604,17 +704,17 @@ provider.awareness.setLocalStateField('user', { name: user.email, color: userCol
 
 **US 6.1 [E1]:** As a developer, a Redis token bucket enforces per-user rate limits (100 ingestion jobs/day, 500 RAG queries/day) in FastAPI middleware so the system is protected from abuse before it has real users.
 
-**US 6.2 [E1]:** As a developer, ingestion jobs retry failed arXiv and Semantic Scholar API calls up to 3 times with exponential backoff (1s, 2s, 4s) so transient network errors don't surface as user-facing failures.
+**US 6.2 [E1]:** As a developer, ingestion jobs retry failed arXiv, Semantic Scholar, **and Gemini API** calls (including `run_agent` calls) up to 3 times with exponential backoff (2s, 4s, 8s via `tenacity`) so transient network errors and concurrent ADK agent rate-limit hits don't surface as user-facing failures.
 
 **US 6.3 [E1]:** As a developer, every API endpoint logs its response time, and p95 latency per endpoint is queryable from PostgreSQL so performance regressions are detectable before users notice them.
 
-**US 6.5 [E2] (after US 6.4):** As a developer, the FastAPI container is built and deployed to an AWS EC2 t2.micro instance via SSH + docker-compose and accessible at a stable HTTPS URL so the backend is live on free-tier infrastructure.
+**US 6.5 [E2] (after US 6.4):** As a developer, the FastAPI container is deployed alongside a Caddy reverse proxy container on EC2 via docker-compose, automatically provisioning a Let's Encrypt TLS certificate, so the backend is accessible over HTTPS and WSS and the Vercel frontend is not blocked by mixed-content browser policies.
 
 **US 6.6 [E2]:** As a developer, the local PostgreSQL is replaced with AWS RDS (PostgreSQL 16 + pgvector extension enabled) and all migrations are applied so the database is managed, backed up, and production-grade.
 
 **US 6.7 [E2]:** As a developer, the local Redis is replaced with AWS ElastiCache (Redis 7) and the connection string is updated in all workers and middleware so rate limiting and job queues run on managed infrastructure.
 
-**US 6.8 [E2]:** As a developer, an S3 bucket is configured with two prefixes — `pdfs/` for cached arXiv PDFs and `yjs-snapshots/` for Yjs doc serializations — with appropriate IAM policies so the app can read/write without using root credentials.
+**US 6.8 [E2]:** As a developer, an S3 bucket is configured with one prefix — `yjs-snapshots/` for Yjs doc serializations — with appropriate IAM policies so the app can read/write without using root credentials. *Note: The ingestion pipeline embeds `"{title}. {abstract}"` only — no PDF download or full-text parsing. The `pdfs/` prefix is intentionally omitted; adding full-text RAG is a post-hackathon extension.*
 
 **US 6.9 [E2]:** As a developer, all secrets (database URL, Redis URL, Gemini API key, JWT secret) are stored in AWS SSM Parameter Store (free standard tier) and pulled into the EC2 instance's `.env` file at deploy time so no credentials exist in the codebase or Docker image.
 
@@ -626,6 +726,30 @@ provider.awareness.setLocalStateField('user', { name: user.email, color: userCol
 
 ### Technical Execution Checklist
 
+**Caddy reverse proxy — production docker-compose addition (E2 owns, US 6.5):**
+```yaml
+# Add to docker-compose.yml on EC2 (not local dev)
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on:
+      - backend
+
+# Caddyfile (your-domain.com → set to your EC2 Elastic IP or domain)
+# your-domain.com {
+#   reverse_proxy backend:8000
+# }
+# Caddy auto-provisions Let's Encrypt cert — no manual SSL steps needed.
+# WSS works automatically: Vercel frontend connects to wss://your-domain.com/ws/...
+```
+
 **Dockerfile (E1 owns):**
 ```dockerfile
 FROM python:3.12-slim
@@ -634,6 +758,28 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Retry wrapper for all external calls including Gemini (E1 owns, US 6.2):**
+```python
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+import google.api_core.exceptions
+
+@retry(
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    stop=stop_after_attempt(3),
+    retry=retry_if_exception_type((
+        google.api_core.exceptions.ResourceExhausted,  # Gemini rate limit
+        google.api_core.exceptions.ServiceUnavailable,
+        httpx.TimeoutException,
+        httpx.HTTPStatusError,
+    ))
+)
+async def run_agent_with_retry(agent, message: str, **kwargs):
+    return await run_agent(agent, message, **kwargs)
+
+# Use for all agent calls in workers:
+# result = await run_agent_with_retry(ingestion_agent, f"Ingest: {url}")
 ```
 
 **Rate limiting middleware (E1 owns):**
