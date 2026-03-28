@@ -5,6 +5,7 @@ import PaperNode from './components/graph/PaperNode'
 import BlindSpotNode from './components/graph/BlindSpotNode'
 import PaperDetailPanel from './components/PaperDetailPanel'
 import BlindSpotPanel from './components/BlindSpotPanel'
+import RAGQueryBox from './components/RAGQueryBox'
 
 const nodeTypes = {
   paperNode: PaperNode,
@@ -36,12 +37,23 @@ function App() {
             onSelect: () => setSelectedPaper(n),
           },
         })))
-        _setEdges(data.edges.map(e => ({
-          id: `${e.source}-${e.target}`,
-          source: e.source,
-          target: e.target,
-          style: { stroke: '#94A3B8' },
-        })))
+        _setEdges(data.edges.map(e => {
+          const edgeStyles = {
+            extends:      { stroke: '#4ECDC4' },
+            contradicts:  { stroke: '#FF6B6B', strokeDasharray: '5 5' },
+            uses_dataset: { stroke: '#A78BFA' },
+            cites:        { stroke: '#94A3B8' },
+          }
+          const style = edgeStyles[e.edge_type] || edgeStyles.cites
+          return {
+            id: `${e.source}-${e.target}`,
+            source: e.source,
+            target: e.target,
+            label: e.edge_type,
+            labelStyle: { fill: '#94A3B8', fontSize: 10 },
+            style,
+          }
+        }))
       })
   }, [])
 
@@ -76,6 +88,7 @@ function App() {
         open={blindSpotOpen}
         onClose={() => setBlindSpotOpen(false)}
       />
+      <RAGQueryBox />
     </div>
   )
 }
