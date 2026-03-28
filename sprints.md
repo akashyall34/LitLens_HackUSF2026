@@ -43,7 +43,7 @@ By the end of this roadmap your resume line reads:
 
 **US 1.5 [E1+E2]:** As a developer, the backend and frontend share a committed `.env.example` file listing every required variable (API URLs, DB connection strings, Redis URL, Gemini API key, Semantic Scholar key) so both engineers always know the full config surface. *Both engineers contribute their known variables before end of day 1.*
 
-**US 1.8 [E2]:** As a developer, given an arXiv URL I can call a Python function that returns `{title, abstract, authors, year, arxiv_id}` from the arXiv API so paper metadata fetching is proven before ingestion is wired up.
+**US 1.8 [E2]:** As a developer, given a Semantic Scholar paper URL or ID I can call a Python function that returns `{title, abstract, authors, year, semantic_id}` from the Semantic Scholar API so paper metadata fetching is proven before ingestion is wired up.
 
 **US 1.9 [E2]:** As a developer, given a `semantic_id` I can call a Python function that returns `{citation_count, venue, references[]}` from the Semantic Scholar API so citation graph fetching is proven before ingestion is wired up.
 
@@ -69,7 +69,7 @@ litlens/
 │   │   │   ├── orchestrator.py       # ADK Orchestrator [E1]
 │   │   │   └── tools/               # tool functions called by agents
 │   │   └── clients/
-│   │       ├── arxiv.py     # arXiv API client [E2]
+│   │       ├── paper_lookup.py     # Semantic Scholar paper lookup client [E2]
 │   │       └── semantic_scholar.py  # Semantic Scholar client [E2]
 │   ├── migrations/          # raw SQL migration files
 │   └── requirements.txt
@@ -139,7 +139,7 @@ orchestrator = Agent(
     name="litlens_orchestrator",
     model="gemini-2.5-flash",
     instruction="""You are the LitLens orchestrator. Route user requests to the correct specialist:
-- Paper ingestion (arXiv URLs, DOIs, search queries) → ingestion_agent
+- Paper ingestion (Semantic Scholar URLs/IDs, DOIs, search queries) → ingestion_agent
 - Gap detection and blind spot analysis → gap_detection_agent
 - Research questions about workspace papers → research_agent
 Delegate immediately — do not attempt to answer yourself.""",
@@ -156,7 +156,7 @@ Run `adk web` from the `backend/` directory to open the browser-based agent test
 
 ## Sprint 2 — Core Ingestion Pipeline
 
-**The Goal:** A user can paste arXiv links and see a real citation graph in the browser. This is the end-to-end spine of the entire product — every other feature is built on top of it.
+**The Goal:** A user can paste paper links and see a real citation graph in the browser. This is the end-to-end spine of the entire product — every other feature is built on top of it.
 
 **Resume Keywords Added:** Async job queues, Redis + arq, Gemini Embeddings API, pgvector, Semantic Scholar citation graph, React Flow, k-means clustering, Google ADK, IngestionAgent
 
@@ -176,15 +176,15 @@ Run `adk web` from the `backend/` directory to open the browser-based agent test
 
 **US 2.10 [E2]:** As a user, I can filter the rendered graph by year range (slider) and topic cluster (toggle chips) so I can focus on relevant paper subsets.
 
-**US 2.7 [E2]:** As a developer, I can submit ingestion jobs via DOI using `POST /ingest/doi` so papers without arXiv URLs can still be ingested.
+**US 2.7 [E2]:** As a developer, I can submit ingestion jobs via DOI using `POST /ingest/doi` so papers without direct Semantic Scholar URLs can still be ingested.
 
-**US 2.1 [E1]:** As a user, I can submit an arXiv URL via `POST /ingest/url` and receive a `job_id` immediately so the UI stays responsive while ingestion runs in the background.
+**US 2.1 [E1]:** As a user, I can submit a paper URL via `POST /ingest/url` and receive a `job_id` immediately so the UI stays responsive while ingestion runs in the background.
 
 **US 2.2 [E1]:** As a developer, the ingestion pipeline generates `gemini-embedding-2-preview` embeddings for each paper's `"{title}. {abstract}"` string and stores the resulting `vector(768)` in `paper_embeddings` so vector search is possible.
 
 **US 2.3 [E1]:** As a developer, the async job queue is implemented with Redis + `arq` so ingestion jobs run as background workers and never block the FastAPI request thread.
 
-**US 2.4 [E1] (after US 2.8 or use mock):** As a user, I can see a real citation graph in the browser with cluster-colored nodes, a minimap, and zoom/pan controls after pasting arXiv links into the frontend.
+**US 2.4 [E1] (after US 2.8 or use mock):** As a user, I can see a real citation graph in the browser with cluster-colored nodes, a minimap, and zoom/pan controls after pasting paper links into the frontend.
 
 **US 2.5 [E1]:** As a user, clicking a node opens a shadcn `Sheet` (PaperDetailPanel) from the right side of the screen, animated with Framer Motion, showing title, abstract, authors, year, citation count, and a link to the paper.
 
@@ -245,7 +245,6 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 **Ingestion rate limits to respect:**
 - Semantic Scholar: 1 req/sec with API key — use `asyncio.sleep(1)` between reference fetches
-- arXiv: 3 req/sec max — add `asyncio.sleep(0.35)` between requests
 - Gemini embeddings: batch up to 100 abstracts per call — free tier 1,500 req/day, 15 RPM
 
 **Shared Contract — Redis job key schema (agree before coding):**
@@ -273,7 +272,7 @@ export const MOCK_GRAPH = {
 
 ---
 
-**Definition of Done:** Paste 5 arXiv links into the frontend → ingestion jobs run in the background → a real citation graph with cluster-colored nodes appears in the browser → clicking a node slides open a paper detail panel from the right.
+**Definition of Done:** Paste 5 paper links into the frontend → ingestion jobs run in the background → a real citation graph with cluster-colored nodes appears in the browser → clicking a node slides open a paper detail panel from the right.
 
 ---
 
@@ -455,7 +454,7 @@ export const MOCK_GAPS = {
 
 ---
 
-**Definition of Done:** Ingest 10 real arXiv papers → click "Detect Blind Spots" → the BlindSpotPanel populates with citation gaps ranked by frequency and conceptual gaps with LLM-generated labels and one-sentence explanations. At least one gap card makes a non-obvious, accurate recommendation.
+**Definition of Done:** Ingest 10 real papers → click "Detect Blind Spots" → the BlindSpotPanel populates with citation gaps ranked by frequency and conceptual gaps with LLM-generated labels and one-sentence explanations. At least one gap card makes a non-obvious, accurate recommendation.
 
 ---
 
@@ -704,7 +703,7 @@ provider.awareness.setLocalStateField('user', { name: user.email, color: userCol
 
 **US 6.1 [E1]:** As a developer, a Redis token bucket enforces per-user rate limits (100 ingestion jobs/day, 500 RAG queries/day) in FastAPI middleware so the system is protected from abuse before it has real users.
 
-**US 6.2 [E1]:** As a developer, ingestion jobs retry failed arXiv, Semantic Scholar, **and Gemini API** calls (including `run_agent` calls) up to 3 times with exponential backoff (2s, 4s, 8s via `tenacity`) so transient network errors and concurrent ADK agent rate-limit hits don't surface as user-facing failures.
+**US 6.2 [E1]:** As a developer, ingestion jobs retry failed Semantic Scholar and **Gemini API** calls (including `run_agent` calls) up to 3 times with exponential backoff (2s, 4s, 8s via `tenacity`) so transient network errors and concurrent ADK agent rate-limit hits don't surface as user-facing failures.
 
 **US 6.3 [E1]:** As a developer, every API endpoint logs its response time, and p95 latency per endpoint is queryable from PostgreSQL so performance regressions are detectable before users notice them.
 
@@ -850,7 +849,7 @@ aws ssm get-parameters-by-path --path /litlens/ --with-decryption \
 
 ---
 
-**Definition of Done:** `git push origin main` triggers the GitHub Actions pipeline. Tests pass. The EC2 instance pulls the new image and restarts via docker-compose. The app is live at a real HTTPS URL. A colleague can register, create a workspace, paste an arXiv link, and see a citation graph — using only their browser, with your laptop closed.
+**Definition of Done:** `git push origin main` triggers the GitHub Actions pipeline. Tests pass. The EC2 instance pulls the new image and restarts via docker-compose. The app is live at a real HTTPS URL. A colleague can register, create a workspace, paste a paper link, and see a citation graph — using only their browser, with your laptop closed.
 
 ---
 

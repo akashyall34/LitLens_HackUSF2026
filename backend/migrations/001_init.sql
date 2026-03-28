@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS papers (
 	title TEXT NOT NULL,
 	abstract TEXT,
 	year INT,
-	arxiv_id TEXT,
 	doi TEXT,
 	semantic_scholar_id TEXT,
 	source_url TEXT,
@@ -106,7 +105,6 @@ CREATE INDEX IF NOT EXISTS idx_workspace_members_user_id ON workspace_members(us
 CREATE INDEX IF NOT EXISTS idx_workspace_papers_workspace_id ON workspace_papers(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_papers_paper_id ON workspace_papers(paper_id);
 CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
-CREATE INDEX IF NOT EXISTS idx_papers_arxiv_id ON papers(arxiv_id);
 CREATE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS idx_papers_semantic_scholar_id ON papers(semantic_scholar_id);
 CREATE INDEX IF NOT EXISTS idx_citations_cited_paper_id ON citations(cited_paper_id);

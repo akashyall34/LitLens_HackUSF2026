@@ -2,7 +2,7 @@ LitLens — Full Technical Specification
 Production-grade literature blind spot detection and knowledge graph platform
 
 1. What It Does
-Researchers paste arXiv links or search a topic → LitLens builds a visual citation knowledge graph, detects foundational gaps in their literature coverage using both citation analysis and semantic embedding clustering, surfaces what they're missing and why, and answers questions grounded in their reading.
+Researchers paste paper links or search a topic → LitLens builds a visual citation knowledge graph, detects foundational gaps in their literature coverage using both citation analysis and semantic embedding clustering, surfaces what they're missing and why, and answers questions grounded in their reading.
 The one-sentence pitch: It finds what you don't know you're missing.
 
 2. Why It's Unique
@@ -14,7 +14,7 @@ BrowseGraph	Passive browsing capture	No citation intelligence
 LitLens	All of the above + blind spot detection	Nothing like it exists
 3. Full Feature Set
 3.1 Core
-* Paper ingestion via arXiv URL, DOI, or topic search
+* Paper ingestion via Semantic Scholar URL/ID, DOI, or topic search
 * Citation graph built automatically via Semantic Scholar API
 * Visual graph canvas with cluster coloring, zoom, filter by year/topic
 * Citation gap detection — papers cited by ≥2 of yours that you haven't read
@@ -54,7 +54,7 @@ Embeddings	Gemini gemini-embedding-2-preview	Free via Google AI Studio, 768 dime
 LLM + Agents	Gemini 2.0 Flash via Google ADK	Free tier, powers all agents and LLM generation; ADK provides sub_agent routing and built-in test UI
 Multi-agent	Google ADK	Purpose-built agent framework for Gemini; declarative Agent definition, sub_agents, automatic tool-use loop
 Clustering	scikit-learn (HDBSCAN)	Handles variable cluster sizes better than k-means for papers
-External APIs	Semantic Scholar + arXiv	Free, reliable, citation data nobody else surfaces this way
+External APIs	Semantic Scholar	Free, reliable, citation data nobody else surfaces this way
 Frontend deploy	Vercel	Simpler than S3+CloudFront for React, free tier sufficient
 CI/CD	GitHub Actions → EC2	Auto-deploy main branch to EC2 on push via SSH + docker-compose
 5. System Architecture
@@ -88,15 +88,14 @@ CI/CD	GitHub Actions → EC2	Auto-deploy main branch to EC2 on push via SSH + do
               └─────────────────────────┘
 
 AWS S3:
-  paper PDFs ──────────────► cached on first fetch from arXiv
+  paper PDFs ──────────────► optional future full-text caching
   Yjs snapshots ──────────► persisted per workspace
 
 AWS SES:
   workspace invites ───────► email delivery
 
 External (read-only):
-  arXiv API ──────────────► paper metadata + abstracts
-  Semantic Scholar API ───► citation graph + author data
+  Semantic Scholar API ───► paper metadata + citation graph + author data
   Gemini API ──────────────► embeddings + text generation
 
 6. Database Schema
@@ -125,7 +124,6 @@ CREATE TABLE workspace_members (
 -- Papers
 CREATE TABLE papers (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  arxiv_id        TEXT UNIQUE,
   semantic_id     TEXT UNIQUE,         -- Semantic Scholar paper ID
   doi             TEXT,
   title           TEXT NOT NULL,
@@ -204,7 +202,7 @@ POST /auth/register     { email, password } → { user_id, access_token, refresh
 POST /auth/login        { email, password } → { access_token, refresh_token }
 POST /auth/refresh      { refresh_token }   → { access_token }
 7.2 Ingestion
-POST /ingest/url        { url: "https://arxiv.org/abs/2310.01234", workspace_id }
+POST /ingest/url        { url: "https://www.semanticscholar.org/paper/...", workspace_id }
 POST /ingest/doi        { doi: "10.48550/...", workspace_id }
 POST /ingest/search     { query: "LLM agent reliability", workspace_id, limit: 20 }
 GET  /ingest/status/{job_id}   → { status, progress, paper_id }
@@ -251,12 +249,11 @@ POST /workspaces/{id}/invite           { email } → { invite_id }
 WS   /ws/{workspace_id}?token=...      Yjs sync channel
 
 8. Ingestion Pipeline (Your Piece — Hours 2-8)
-Input: arXiv URL / DOI / search query
+Input: Semantic Scholar URL/ID / DOI / search query
          │
          ▼
 1. Fetch paper metadata
-   ├── arXiv API: abstract, title, authors, year
-   └── Semantic Scholar API: citation count, semantic_id, venue
+  └── Semantic Scholar API: abstract, title, authors, year, citation count, semantic_id, venue
 
          │
          ▼
@@ -291,34 +288,41 @@ The ingestion pipeline runs inside a Google ADK agent. The arq background worker
 ```python
 from google.adk.agents import Agent
 from app.agents.tools.ingest_tools import (
-    fetch_arxiv_paper, fetch_semantic_scholar_data,
-    generate_paper_embedding, store_paper, store_citation
+  fetch_semantic_scholar_paper,
+  generate_paper_embedding,
+  store_paper,
+  store_citation,
 )
 
 ingestion_agent = Agent(
     name="ingestion_agent",
     model="gemini-2.5-flash",
     instruction="""You are a paper ingestion specialist for LitLens.
-Given an arXiv URL and workspace_id, work through these steps in order:
-1. fetch_arxiv_paper — title, abstract, authors, year, arxiv_id
-2. fetch_semantic_scholar_data — semantic_id, citation_count, references list
-3. generate_paper_embedding — 768-dim vector for the paper
-4. store_paper — persist all metadata + embedding to DB, add to workspace
-5. store_citation — for each reference, create a citation edge
-Confirm with a summary of what was stored.""",
-    tools=[fetch_arxiv_paper, fetch_semantic_scholar_data,
-           generate_paper_embedding, store_paper, store_citation]
+    Given a Semantic Scholar paper URL/ID and workspace_id, work through these steps in order:
+    1. fetch_semantic_scholar_paper — title, abstract, authors, year, semantic_id, references
+    2. generate_paper_embedding — 768-dim vector for the paper
+    3. store_paper — persist all metadata + embedding to DB, add to workspace
+    4. store_citation — for each reference, create a citation edge
+    Confirm with a summary of what was stored.""",
+      tools=[
+        fetch_semantic_scholar_paper,
+        generate_paper_embedding,
+        store_paper,
+        store_citation,
+      ]
 )
 
 # arq worker — delegates to the agent
 async def ingest_paper(ctx, url: str, workspace_id: str):
-    result = await run_agent(ingestion_agent, f"Ingest into workspace {workspace_id}: {url}")
+  result = await run_agent(
+    ingestion_agent,
+    f"Ingest this Semantic Scholar paper into workspace {workspace_id}: {url}",
+  )
     return result
 ```
 
 Rate limiting strategy for external APIs:
 * Semantic Scholar: 100 req/5min unauthenticated, 1 req/sec with API key (get the key, it's free)
-* arXiv: No hard limit but be polite — 3 req/sec max
 * Gemini: Batch embed requests — up to 100 texts per call, free tier 1,500 req/day
 
 9. The Two Gap Detection Layers (P3's Piece + Your Algorithm)
@@ -528,7 +532,7 @@ orchestrator = Agent(
     name="litlens_orchestrator",
     model="gemini-2.5-flash",
     instruction="""You are the LitLens orchestrator. Route user requests immediately:
-- Paper ingestion (arXiv URLs, DOIs, search queries) → ingestion_agent
+- Paper ingestion (Semantic Scholar URLs/IDs, DOIs, search queries) → ingestion_agent
 - Gap detection and blind spot analysis → gap_detection_agent
 - Research questions about workspace papers → research_agent
 Delegate immediately — do not attempt to answer yourself.""",
@@ -648,13 +652,13 @@ Goal: All three systems running and talking to each other before writing feature
 * FastAPI skeleton with health check endpoint
 * PostgreSQL schema from Section 6 — run all migrations
 * pgvector extension enabled, paper_embeddings table created
-* arXiv API client: fetch paper by URL, return { title, abstract, authors, year }
+* Semantic Scholar paper lookup client: fetch paper by URL/ID, return { title, abstract, authors, year }
 * Semantic Scholar API client: fetch citations by semantic_id
 * React + Vite scaffold with shadcn/ui + Tailwind CSS initialized
 * React Flow rendering hardcoded test nodes and edges
 * .env contract agreed across backend and frontend
 * Google ADK installed; IngestionAgent, GapDetectionAgent, ResearchAgent, and Orchestrator defined with empty tool stubs; `adk web` confirms routing
-End of week checkpoint: Paste one arXiv URL → paper metadata appears in database.
+End of week checkpoint: Paste one Semantic Scholar URL → paper metadata appears in database.
 
 Week 2 — Core Pipeline
 Goal: Full ingestion end-to-end, graph visible in the browser.
@@ -665,7 +669,7 @@ Goal: Full ingestion end-to-end, graph visible in the browser.
 * Node click → PaperDetailPanel showing title, abstract, authors, link
 * Cluster coloring: run k-means on embeddings, assign color per cluster
 * Filter controls: year range slider, topic cluster toggle
-End of week checkpoint: Paste 5 arXiv links → see a real citation graph with colored clusters.
+End of week checkpoint: Paste 5 paper links → see a real citation graph with colored clusters.
 
 Week 3 — Blind Spot Engine
 Goal: The killer feature working end-to-end.
@@ -702,7 +706,7 @@ End of week checkpoint: Two browser windows open to the same workspace → annot
 Week 6 — Production Hardening
 Goal: Deployed, stable, measurable.
 * Rate limiting middleware (Redis token bucket)
-* Error handling: retry logic for arXiv/Semantic Scholar API failures
+* Error handling: retry logic for Semantic Scholar API failures
 * p95 latency tracking: log response times per endpoint, store in PostgreSQL
 * Docker: Dockerfile + docker-compose for local dev parity
 * Deploy FastAPI container to AWS EC2 (t2.micro) — SSH in, run docker-compose up -d
