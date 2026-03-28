@@ -1,13 +1,20 @@
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
-import { useState } from 'react'
-import { MOCK_GAPS } from '../mocks/gaps'
 
 const tabs = ['Citation Gaps', 'Conceptual Gaps']
 
 export default function BlindSpotPanel({ open, onClose }) {
   const [activeTab, setActiveTab] = useState(0)
-  const gaps = MOCK_GAPS
+  const [gaps, setGaps] = useState({ citation_gaps: [], semantic_gaps: [] })
+
+  const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL}/gaps/${WORKSPACE_ID}`)
+      .then(res => res.json())
+      .then(data => setGaps(data))
+  }, [])
 
   return (
     <AnimatePresence>
