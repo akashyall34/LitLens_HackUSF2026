@@ -89,7 +89,7 @@ Papers:
 Question: {query}"""
 
     t1 = time.perf_counter()
-    response = _client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     llm_ms = (time.perf_counter() - t1) * 1000
 
     return {
