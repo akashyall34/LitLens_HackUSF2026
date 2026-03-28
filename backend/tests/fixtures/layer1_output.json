@@ -1,0 +1,16 @@
+[
+  {
+    "paper_id": "uuid-a",
+    "gap_type": "citation_gap",
+    "citation_freq": 5,
+    "cited_by_papers": ["Paper X", "Paper Y", "Paper Z", "Paper W", "Paper V"],
+    "paper": { "title": "Attention Is All You Need", "year": 2017, "authors": ["Vaswani et al."] }
+  },
+  {
+    "paper_id": "uuid-b",
+    "gap_type": "citation_gap",
+    "citation_freq": 3,
+    "cited_by_papers": ["Paper X", "Paper Y", "Paper Z"],
+    "paper": { "title": "BERT", "year": 2018, "authors": ["Devlin et al."] }
+  }
+]

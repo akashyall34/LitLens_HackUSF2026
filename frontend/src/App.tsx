@@ -4,6 +4,7 @@ import '@xyflow/react/dist/style.css'
 import PaperNode from './components/graph/PaperNode'
 import BlindSpotNode from './components/graph/BlindSpotNode'
 import PaperDetailPanel from './components/PaperDetailPanel'
+import BlindSpotPanel from './components/BlindSpotPanel'
 
 const nodeTypes = {
   paperNode: PaperNode,
@@ -16,6 +17,8 @@ function App() {
   const [selectedPaper, setSelectedPaper] = useState(null as any)
   const [nodes, _setNodes, onNodesChange] = useNodesState([])
   const [edges, _setEdges, onEdgesChange] = useEdgesState([])
+  const [blindSpotOpen, setBlindSpotOpen] = useState(false)
+
 
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL}/graph/${WORKSPACE_ID}`)
@@ -44,6 +47,12 @@ function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#0f172a' }}>
+      <button
+        onClick={() => setBlindSpotOpen(true)}
+        className="absolute top-4 left-4 z-10 bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-2 rounded-lg"
+      >
+        View Blind Spots
+      </button>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -62,6 +71,10 @@ function App() {
       <PaperDetailPanel
         paper={selectedPaper}
         onClose={() => setSelectedPaper(null)}
+      />
+      <BlindSpotPanel
+        open={blindSpotOpen}
+        onClose={() => setBlindSpotOpen(false)}
       />
     </div>
   )
