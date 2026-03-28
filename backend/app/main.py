@@ -7,6 +7,7 @@ from app.routers.ingest import router as ingest_router
 from app.routers import graph as graph_router
 from app.routers import gaps as gaps_router
 from app.routers import rag as rag_router
+from app.routers import edges as edges_router
 
 load_dotenv()
 
@@ -26,6 +27,8 @@ app.include_router(ingest_router)
 app.include_router(graph_router.router)
 app.include_router(gaps_router.router)
 app.include_router(rag_router.router)
+app.include_router(edges_router.router)
+
 
 @app.get("/health")
 def health():

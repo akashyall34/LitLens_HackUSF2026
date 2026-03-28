@@ -165,14 +165,28 @@ def get_graph(
         cid = node["cluster_id"]
         cluster_counts[cid] = cluster_counts.get(cid, 0) + 1
 
+    # ── US 4.7: Read cluster labels written by E1's GapDetectionAgent ─────
+    label_rows = db.execute(
+        text("""
+            SELECT DISTINCT cluster_label
+            FROM blind_spots
+            WHERE workspace_id = :wid
+              AND cluster_label IS NOT NULL
+              AND gap_type = 'semantic_gap'
+            ORDER BY cluster_label
+        """),
+        {"wid": workspace_id},
+    ).fetchall()
+    cluster_labels = [r[0] for r in label_rows]
+
     clusters = [
         {
             "id": cid,
-            "label": None,       # filled in Sprint 3 by GapDetectionAgent
+            "label": cluster_labels[i] if i < len(cluster_labels) else None,
             "color": CLUSTER_COLORS[cid % len(CLUSTER_COLORS)],
             "size": count,
         }
-        for cid, count in sorted(cluster_counts.items())
+        for i, (cid, count) in enumerate(sorted(cluster_counts.items()))
     ]
 
     return {"nodes": nodes, "edges": edges, "clusters": clusters}
