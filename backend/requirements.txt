@@ -6,3 +6,5 @@ psycopg[binary]>=3.2.10,<4.0.0
 google-adk==1.28.0
 python-dotenv==1.0.1
 httpx==0.28.1
+arq>=0.25.0,<1.0.0
+google-genai>=1.0.0,<2.0.0
