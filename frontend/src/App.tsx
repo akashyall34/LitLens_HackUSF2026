@@ -32,6 +32,7 @@ function App() {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
+    if (!user) return
     connectWorkspace(WORKSPACE_ID)
     api.get(`/graph/${WORKSPACE_ID}`)
       .then(res => res.data)
@@ -66,7 +67,7 @@ function App() {
           }
         }))
       })
-  }, [])
+  }, [user])
 
   useEffect(() => {
     edgeAnnotations.observe(() => {
