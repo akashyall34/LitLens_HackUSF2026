@@ -74,11 +74,16 @@ def join_workspace(
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="This invite has expired")
 
-    invited = (row.invited_email or "").strip().lower()
-    if (current_user["email"] or "").strip().lower() != invited:
+    invited_raw = (row.invited_email or "").strip()
+    invited = invited_raw.lower()
+    signed_in = (current_user["email"] or "").strip().lower()
+    if signed_in != invited:
         raise HTTPException(
             status_code=403,
-            detail="Sign in with the email address that received the invite, then try again.",
+            detail=(
+                f"This invite was sent to {invited_raw}, but you are signed in as {current_user['email']}. "
+                "Sign out, sign in with the invited address, then open this link again."
+            ),
         )
 
     db.execute(

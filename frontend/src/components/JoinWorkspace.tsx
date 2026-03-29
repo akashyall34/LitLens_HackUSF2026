@@ -56,9 +56,22 @@ export default function JoinWorkspace() {
   }
 
   if (status === 'err') {
+    const retryJoin = () => {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('user')
+      window.location.href = `/join?token=${encodeURIComponent(token || '')}`
+    }
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-sm px-6 max-w-md mx-auto text-center">
-        <p className="text-red-300">{message}</p>
+        <p className="text-red-300 whitespace-pre-wrap">{message}</p>
+        <button
+          type="button"
+          onClick={retryJoin}
+          className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg"
+        >
+          Sign out and use a different account
+        </button>
         <a href="/" className="text-teal-400 hover:underline">
           Back to LitLens
         </a>
