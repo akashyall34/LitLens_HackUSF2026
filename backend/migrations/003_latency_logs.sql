@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS latency_logs (
+    id BIGSERIAL PRIMARY KEY,
+    endpoint TEXT NOT NULL,
+    duration_ms FLOAT NOT NULL,
+    logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

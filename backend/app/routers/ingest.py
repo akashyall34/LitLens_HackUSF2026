@@ -7,7 +7,7 @@ from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.redis_client import get_redis
+from app.redis_client import get_redis, check_rate_limit
 from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/ingest", tags=["ingest"], dependencies=[Depends(get_current_user)])
@@ -22,7 +22,8 @@ class IngestURLRequest(BaseModel):
 
 
 @router.post("/url")
-async def ingest_url(body: IngestURLRequest):
+async def ingest_url(body: IngestURLRequest, current_user=Depends(get_current_user), redis=Depends(get_redis),):
+    await check_rate_limit(redis, current_user["id"], "ingest_url", 100)
     job_id = str(uuid.uuid4())
     pool = await create_pool(RedisSettings.from_dsn(REDIS_URL))
 
@@ -67,8 +68,10 @@ class IngestDOIRequest(BaseModel):
 @router.post("/doi")
 async def ingest_doi(
     request: IngestDOIRequest,
-    redis: aioredis.Redis = Depends(get_redis),
+    current_user=Depends(get_current_user),
+    redis=Depends(get_redis),
 ):
+    await check_rate_limit(redis, str(current_user["id"]), "ingest_doi", 100)
     doi = request.doi.strip()
 
     if doi.lower().startswith("doi:"):
