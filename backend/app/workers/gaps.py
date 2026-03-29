@@ -48,5 +48,7 @@ async def detect_gaps(ctx, workspace_id):
 
 
 class WorkerSettings:
+    """Local/dev only: production compose runs `app.workers.ingest.WorkerSettings`, which registers `detect_gaps` too."""
+
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
     functions = [detect_gaps]

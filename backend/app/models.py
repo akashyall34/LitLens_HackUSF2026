@@ -68,3 +68,18 @@ class WorkspacePaper(Base):
     paper_id = Column(UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True)
     added_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     added_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+
+class BlindSpot(Base):
+    __tablename__ = "blind_spots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    gap_type = Column(Text, nullable=False)
+    paper_id = Column(UUID(as_uuid=True), ForeignKey("papers.id", ondelete="SET NULL"), nullable=True)
+    cluster_label = Column(Text, nullable=True)
+    coverage_score = Column(Double, nullable=True)
+    citation_freq = Column(Integer, nullable=True)
+    why_matters = Column(Text, nullable=True)
+    payload = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)

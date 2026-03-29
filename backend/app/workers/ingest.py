@@ -4,6 +4,7 @@ import uuid
 from arq.connections import RedisSettings
 
 from app.clients.paper_lookup import fetch_paper_metadata
+from app.workers.gaps import detect_gaps
 from app.utils.embeddings import embed_texts
 from app.db import SessionLocal
 from app.models import Paper, PaperEmbedding, WorkspacePaper
@@ -118,4 +119,4 @@ async def ingest_paper(ctx, url, workspace_id):
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
-    functions = [ingest_paper]
+    functions = [ingest_paper, detect_gaps]

@@ -96,8 +96,20 @@ async def get_gaps(
 
 # ── US 3.4 ─────────────────────────────────────────────────────────────────
 @router.post("/{workspace_id}/detect")
-async def trigger_gap_detection(workspace_id):
+async def trigger_gap_detection(
+    workspace_id: str,
+    current_user=Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    try:
+        uuid_lib.UUID(workspace_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid workspace ID")
+
     job_id = str(uuid.uuid4())
+    await redis.set(f"job:{job_id}:status", "pending")
+    await redis.set(f"job:{job_id}:progress", "0")
+
     pool = await create_pool(RedisSettings.from_dsn(REDIS_URL))
 
     await pool.enqueue_job(
@@ -108,6 +120,27 @@ async def trigger_gap_detection(workspace_id):
     await pool.aclose()
 
     return {"job_id": job_id}
+
+
+@router.get("/status/{job_id}")
+async def gaps_job_status(
+    job_id: str,
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Same Redis keys as ingest jobs — conceptual gap detection progress."""
+    status = await redis.get(f"job:{job_id}:status")
+    if status is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    progress = await redis.get(f"job:{job_id}:progress") or "0"
+    if isinstance(status, bytes):
+        status = status.decode()
+    if isinstance(progress, bytes):
+        progress = progress.decode()
+    return {
+        "job_id": job_id,
+        "status": status,
+        "progress": int(progress),
+    }
 
 
 # ── US 3.9 cache invalidation ───────────────────────────────────────────────
