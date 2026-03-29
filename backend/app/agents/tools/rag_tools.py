@@ -85,8 +85,36 @@ def get_paper_details(paper_id):
     finally:
         db.close()
 
-def answer_rag_query(query, workspace_id):
+def _format_conversation_history(
+    history: list[dict] | None,
+    *,
+    max_turns: int = 12,
+    max_answer_chars: int = 1500,
+) -> str:
+    if not history:
+        return ""
+    blocks = []
+    for turn in history[-max_turns:]:
+        q = (turn.get("query") or "").strip()
+        a = (turn.get("answer") or "").strip()
+        if not q:
+            continue
+        if len(a) > max_answer_chars:
+            a = a[: max_answer_chars - 1].rstrip() + "…"
+        blocks.append(f"User: {q}\nAssistant: {a}")
+    if not blocks:
+        return ""
+    return (
+        "Earlier in this conversation (for follow-ups like 'elaborate', 'which paper', 'compare'):\n"
+        + "\n\n---\n\n".join(blocks)
+        + "\n\n"
+    )
+
+
+def answer_rag_query(query, workspace_id, history: list[dict] | None = None):
     import time
+
+    history = history or []
 
     t0 = time.perf_counter()
     query_embedding = embed_query(query)
@@ -103,16 +131,19 @@ def answer_rag_query(query, workspace_id):
         return f"[{meta}]:\n{c['abstract'] or '(no abstract in index)'}"
 
     context = "\n\n".join(_chunk_line(c) for c in chunks)
+    history_block = _format_conversation_history(history)
 
-    prompt = f"""You are a research assistant. Answer the question below using ONLY the papers provided.
+    prompt = f"""You are a research assistant. Ground every factual claim in the “Papers” section below.
 Use venue/journal lines when the question asks where something was published.
 Cite papers by title in brackets like [Paper Title].
 If the answer is not in the papers, say so explicitly.
 
-Papers:
+The user may refer to the prior dialogue for pronouns or follow-ups; still verify claims against the papers.
+
+{history_block}Papers:
 {context}
 
-Question: {query}"""
+Current question: {query}"""
 
     t1 = time.perf_counter()
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)

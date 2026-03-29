@@ -35,13 +35,17 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
 
     const id = crypto.randomUUID()
 
+    const history = turns
+      .filter(t => !t.failed)
+      .map(t => ({ query: t.query, answer: t.answer }))
+
     try {
       const { data } = await api.post<{
         answer: string
         sources?: Source[]
         vector_search_ms?: number
         llm_ms?: number
-      }>('/rag/query', { query: q, workspace_id: workspaceId })
+      }>('/rag/query', { query: q, workspace_id: workspaceId, history })
 
       setTurns(prev => [
         ...prev,
@@ -78,7 +82,8 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
       >
         {turns.length === 0 && !loading && (
           <p className="text-slate-500 text-xs text-center py-6 px-2">
-            Ask about your workspace papers. Each answer stays in the thread so you can scroll back.
+            Ask about your workspace papers. Follow-up questions use this thread as context; retrieval still uses
+            your latest message to find relevant papers.
           </p>
         )}
 
