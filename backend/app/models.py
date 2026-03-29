@@ -47,7 +47,7 @@ class PaperEmbedding(Base):
 
     paper_id = Column(UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), primary_key=True)
     chunk_index = Column(Integer, nullable=False, default=0, primary_key=True)
-    embedding = Column(Vector(768), nullable=False)
+    embedding = Column(Vector(3072), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 
 
