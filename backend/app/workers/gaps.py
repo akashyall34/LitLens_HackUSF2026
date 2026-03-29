@@ -1,7 +1,12 @@
 import json
+import os
+
+from arq.connections import RedisSettings
 
 from app.db import SessionLocal
 from app.agents.tools.gap_tools import detect_semantic_gaps
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
 async def detect_gaps(ctx, workspace_id):
@@ -43,5 +48,5 @@ async def detect_gaps(ctx, workspace_id):
 
 
 class WorkerSettings:
-    redis_settings = None
+    redis_settings = RedisSettings.from_dsn(REDIS_URL)
     functions = [detect_gaps]

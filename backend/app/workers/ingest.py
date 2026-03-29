@@ -1,9 +1,14 @@
+import os
 import uuid
+
+from arq.connections import RedisSettings
 
 from app.clients.paper_lookup import fetch_paper_metadata
 from app.utils.embeddings import embed_texts
 from app.db import SessionLocal
 from app.models import Paper, PaperEmbedding, WorkspacePaper
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 async def ingest_paper(ctx, url, workspace_id):
     job_id = ctx["job_id"]
@@ -67,5 +72,5 @@ async def ingest_paper(ctx, url, workspace_id):
     return {"paper_id": str(paper.id)}
 
 class WorkerSettings:
-    redis_settings = None # uses REDIS_URL from env by default
+    redis_settings = RedisSettings.from_dsn(REDIS_URL)
     functions = [ingest_paper]

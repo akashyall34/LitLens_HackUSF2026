@@ -22,6 +22,16 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    build: ./backend
+    container_name: litlens-worker
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "arq", "app.workers.ingest.WorkerSettings"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     container_name: litlens-caddy
