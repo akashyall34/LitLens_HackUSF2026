@@ -18,7 +18,11 @@ export default function WorkspaceSettings({ open, onClose }) {
 
     try {
       const { data } = await api.post(`/workspaces/${WORKSPACE_ID}/invite`, { email })
-      setInviteStatus({ success: true, join_url: data.join_url })
+      setInviteStatus({
+        success: true,
+        join_url: data.join_url,
+        email_sent: data.email_sent,
+      })
       setEmail('')
     } catch (err) {
       setInviteStatus({ success: false, message: err.response?.data?.detail || 'Invite failed' })
@@ -75,7 +79,12 @@ export default function WorkspaceSettings({ open, onClose }) {
               <div className={`rounded-lg p-3 text-sm ${inviteStatus.success ? 'bg-teal-900/40 text-teal-300' : 'bg-red-900/40 text-red-300'}`}>
                 {inviteStatus.success ? (
                   <div className="space-y-1">
-                    <p>Invite sent!</p>
+                    <p>Invite created.</p>
+                    {inviteStatus.email_sent === false && (
+                      <p className="text-amber-200/90 text-xs">
+                        Email could not be sent (check SES setup). Share the link below manually.
+                      </p>
+                    )}
                     <p className="text-xs text-slate-400 break-all">{inviteStatus.join_url}</p>
                   </div>
                 ) : (

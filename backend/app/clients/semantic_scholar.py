@@ -6,7 +6,8 @@ import httpx
 
 SEMANTIC_SCHOLAR_PAPER_URL = "https://api.semanticscholar.org/graph/v1/paper"
 SEMANTIC_SCHOLAR_FIELDS = (
-    "paperId,title,abstract,authors,year,venue,citationCount,url,references.paperId"
+    "paperId,title,abstract,authors,year,venue,citationCount,url,"
+    "externalIds,references.paperId"
 )
 
 
@@ -43,11 +44,16 @@ def fetch_semantic_scholar_metadata(paper_identifier: str) -> dict[str, Any]:
     response.raise_for_status()
 
     data = response.json()
+    ext = data.get("externalIds") or {}
+    doi_val = ext.get("DOI")
+    if doi_val and not str(doi_val).lower().startswith("doi:"):
+        doi_val = f"doi:{doi_val}"
     return {
         "title": data.get("title"),
         "abstract": data.get("abstract"),
         "authors": [author.get("name") for author in (data.get("authors") or [])],
         "year": data.get("year"),
+        "doi": doi_val,
         "semantic_id": data.get("paperId"),
         "citation_count": data.get("citationCount", 0),
         "venue": data.get("venue"),

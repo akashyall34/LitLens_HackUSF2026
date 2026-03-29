@@ -21,6 +21,45 @@ def _parse_embedding(raw):
     return json.loads(raw)
 
 
+def _dedupe_key(p: dict) -> str:
+    raw = (p.get("doi") or "").strip()
+    if raw.lower().startswith("doi:"):
+        raw = raw[4:].strip()
+    doi = raw.lower() if raw else ""
+    if doi:
+        return f"doi:{doi}"
+    sid = (p.get("semantic_scholar_id") or "").strip()
+    if sid:
+        return f"ss:{sid}"
+    return f"id:{p['id']}"
+
+
+def _collapse_duplicate_papers(papers: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """Merge rows that refer to the same work (DOI / Semantic Scholar id)."""
+    groups: dict[str, list[dict]] = {}
+    for p in papers:
+        groups.setdefault(_dedupe_key(p), []).append(p)
+
+    merged: list[dict] = []
+    id_remap: dict[str, str] = {}
+
+    for _key, group in groups.items():
+        rep = sorted(
+            group,
+            key=lambda x: (-(x.get("citation_count") or 0), x["id"]),
+        )[0]
+        canon_id = rep["id"]
+        for p in group:
+            id_remap[p["id"]] = canon_id
+        best = {**rep}
+        for p in group:
+            if not best.get("embedding") and p.get("embedding") is not None:
+                best["embedding"] = p["embedding"]
+        merged.append(best)
+
+    return merged, id_remap
+
+
 router = APIRouter(prefix="/graph", tags=["graph"], dependencies=[Depends(get_current_user)])
 
 # 8 visually distinct colors — one per cluster (cycles if k > 8)
@@ -67,15 +106,17 @@ def get_graph(
     rows = db.execute(
         text("""
             SELECT
-                p.id::text        AS id,
+                p.id::text              AS id,
                 p.title,
                 p.authors,
                 p.year,
+                p.doi,
+                p.semantic_scholar_id,
                 p.citation_count,
-                pe.embedding      AS embedding
+                pe.embedding            AS embedding
             FROM papers p
             JOIN workspace_papers wp ON wp.paper_id = p.id
-            LEFT JOIN paper_embeddings pe ON pe.paper_id = p.id
+            LEFT JOIN paper_embeddings pe ON pe.paper_id = p.id AND pe.chunk_index = 0
             WHERE wp.workspace_id = :workspace_id
         """),
         {"workspace_id": workspace_id},
@@ -85,6 +126,7 @@ def get_graph(
         return {"nodes": [], "edges": [], "clusters": []}
 
     papers = [dict(row._mapping) for row in rows]
+    papers, id_remap = _collapse_duplicate_papers(papers)
 
     # ── 2. Apply year filters (US 2.10) ───────────────────────────────────
     if year_min is not None:
@@ -126,7 +168,7 @@ def get_graph(
     if not papers:
         return {"nodes": [], "edges": [], "clusters": []}
 
-    paper_id_set = [p["id"] for p in papers]
+    all_workspace_paper_ids = list(id_remap.keys())
 
     # ── 5. Build nodes list ───────────────────────────────────────────────
     nodes = []
@@ -158,18 +200,29 @@ def get_graph(
             WHERE citing_paper_id::text = ANY(:ids)
               AND cited_paper_id::text  = ANY(:ids)
         """),
-        {"ids": paper_id_set},
+        {"ids": all_workspace_paper_ids},
     ).fetchall()
 
-    edges = [
-        {
-            "source": row.source,
-            "target": row.target,
-            "edge_type": row.edge_type or "cites",
-            "confidence": float(row.confidence) if row.confidence else 1.0,
-        }
-        for row in edge_rows
-    ]
+    seen_edges: set[tuple[str, str, str]] = set()
+    edges = []
+    for row in edge_rows:
+        src = id_remap.get(row.source, row.source)
+        tgt = id_remap.get(row.target, row.target)
+        if src == tgt:
+            continue
+        et = row.edge_type or "cites"
+        key = (src, tgt, et)
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+        edges.append(
+            {
+                "source": src,
+                "target": tgt,
+                "edge_type": et,
+                "confidence": float(row.confidence) if row.confidence else 1.0,
+            }
+        )
 
     # ── 7. Build clusters summary ─────────────────────────────────────────
     cluster_counts: dict[int, int] = {}

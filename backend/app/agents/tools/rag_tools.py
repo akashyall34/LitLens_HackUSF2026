@@ -16,31 +16,37 @@ def semantic_search(query_embedding, workspace_id, limit=8):
     db = SessionLocal()
     try:
         sql = text("""
-            SELECT pe.paper_id, p.title, p.abstract, p.authors, p.year,
+            SELECT pe.paper_id, p.title, p.abstract, p.authors, p.year, p.venue,
                    1 - (pe.embedding <=> CAST(:embedding AS vector)) AS score
             FROM paper_embeddings pe
             JOIN workspace_papers wp ON wp.paper_id = pe.paper_id
             JOIN papers p ON p.id = pe.paper_id
             WHERE wp.workspace_id = CAST(:workspace_id AS uuid)
+              AND pe.chunk_index = 0
             ORDER BY pe.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
         """)
         rows = db.execute(sql, {
             "embedding": str(query_embedding),
             "workspace_id": workspace_id,
-            "limit": limit,
+            "limit": limit * 4,
         }).fetchall()
-        return [
-            {
-                "paper_id": str(row.paper_id),
-                "title": row.title,
-                "abstract": row.abstract,
-                "authors": row.authors,
-                "year": row.year,
-                "score": float(row.score),
-            }
-            for row in rows
-        ]
+        by_paper: dict[str, dict] = {}
+        for row in rows:
+            pid = str(row.paper_id)
+            score = float(row.score)
+            if pid not in by_paper or score > by_paper[pid]["score"]:
+                by_paper[pid] = {
+                    "paper_id": pid,
+                    "title": row.title,
+                    "abstract": row.abstract,
+                    "authors": row.authors,
+                    "year": row.year,
+                    "venue": row.venue,
+                    "score": score,
+                }
+        ranked = sorted(by_paper.values(), key=lambda x: -x["score"])[:limit]
+        return ranked
     finally:
         db.close()
 
@@ -74,12 +80,16 @@ def answer_rag_query(query, workspace_id):
     if not chunks:
         return {"answer": "No relevant papers found in your workspace.", "sources": [], "vector_search_ms": vector_ms}
 
-    context = "\n\n".join(
-        f"[{c['title']} ({c['year']})]:\n{c['abstract'] or ''}"
-        for c in chunks
-    )
+    def _chunk_line(c):
+        meta = f"{c['title']} ({c['year']})"
+        if c.get("venue"):
+            meta += f"; venue: {c['venue']}"
+        return f"[{meta}]:\n{c['abstract'] or '(no abstract in index)'}"
+
+    context = "\n\n".join(_chunk_line(c) for c in chunks)
 
     prompt = f"""You are a research assistant. Answer the question below using ONLY the papers provided.
+Use venue/journal lines when the question asks where something was published.
 Cite papers by title in brackets like [Paper Title].
 If the answer is not in the papers, say so explicitly.
 
