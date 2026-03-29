@@ -1,0 +1,43 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: litlens-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: litlens-backend
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: litlens-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:
