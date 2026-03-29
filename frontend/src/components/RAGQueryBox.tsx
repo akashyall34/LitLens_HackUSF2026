@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react'
 import axios from 'axios'
+import { ChevronsDown, ChevronsUp } from 'lucide-react'
 import { api } from '../lib/auth'
 
 type Source = { paper_id: string; title: string; score: number }
@@ -205,7 +206,7 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
   return (
     <div
       ref={sheetRef}
-      className="absolute bottom-4 left-1/2 z-20 flex max-h-[min(56vh,460px)] w-[min(680px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2 rounded-2xl border border-white/10 bg-slate-900/80 p-2 shadow-2xl backdrop-blur-xl"
+      className="absolute bottom-4 left-1/2 z-20 flex max-h-[min(56vh,460px)] w-[min(680px,calc(100vw-2rem))] flex-col gap-2 rounded-2xl border border-white/10 bg-slate-900/80 p-2 shadow-2xl backdrop-blur-xl"
       style={{
         transform: `translate(-50%, ${translateY}px)`,
         transition: dragStartY.current == null ? 'transform 180ms ease-out' : 'none',
@@ -222,10 +223,9 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
         onPointerCancel={onHandlePointerUp}
-        className="flex items-center justify-center rounded-xl py-1.5 text-[11px] text-slate-300 hover:bg-slate-800/70"
+        className="mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-slate-800/85 text-slate-200 transition hover:bg-slate-700/90"
       >
-        <span className="mr-2 h-1.5 w-14 rounded-full bg-slate-500/70" />
-        {isOpen ? 'Pull down to close' : 'Pull up to open'}
+        {isOpen ? <ChevronsDown size={16} /> : <ChevronsUp size={16} />}
       </button>
 
       <div
