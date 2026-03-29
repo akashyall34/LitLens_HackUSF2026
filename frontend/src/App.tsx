@@ -157,6 +157,8 @@ function App() {
         <PaperDetailPanel
           paper={selectedPaper}
           onClose={() => setSelectedPaper(null)}
+          workspaceId={WORKSPACE_ID}
+          onRemovedFromWorkspace={loadGraph}
         />
         <BlindSpotPanel
           open={blindSpotOpen}

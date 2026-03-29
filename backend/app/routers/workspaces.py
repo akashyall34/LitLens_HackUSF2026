@@ -5,12 +5,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import boto3
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db
+from app.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +140,46 @@ def remove_workspace_member(
         raise HTTPException(status_code=404, detail="Member not in this workspace")
     db.commit()
     return {"removed": True, "user_id": target_uid}
+
+
+@router.delete("/{workspace_id}/papers/{paper_id}")
+async def remove_workspace_paper(
+    workspace_id: str,
+    paper_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    """Remove a paper from the workspace (graph node). Does not delete the paper row globally."""
+    wid = _parse_uuid(workspace_id)
+    pid = _parse_uuid(paper_id, "paper_id")
+
+    in_ws = db.execute(
+        text("""
+            SELECT 1 FROM workspace_members
+            WHERE workspace_id = CAST(:wid AS UUID) AND user_id = CAST(:uid AS UUID)
+        """),
+        {"wid": wid, "uid": current_user["id"]},
+    ).fetchone()
+    if not in_ws:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    result = db.execute(
+        text("""
+            DELETE FROM workspace_papers
+            WHERE workspace_id = CAST(:wid AS UUID) AND paper_id = CAST(:pid AS UUID)
+        """),
+        {"wid": wid, "pid": pid},
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Paper not in this workspace")
+    db.commit()
+
+    await redis.delete(f"gaps:{wid}:citation")
+    await redis.delete(f"gaps:{wid}:semantic")
+
+    return {"removed": True, "paper_id": pid}
 
 
 @router.post("/join")

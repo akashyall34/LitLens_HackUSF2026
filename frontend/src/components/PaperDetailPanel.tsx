@@ -1,11 +1,36 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
 import { comments } from '../lib/collaboration'
+import { api } from '../lib/auth'
 
-export default function PaperDetailPanel({ paper, onClose }) {
+type GraphPaper = {
+  id: string
+  title?: string
+  year?: number
+  citation_count?: number
+  venue?: string
+  abstract?: string
+  url?: string
+}
+
+type Props = {
+  paper: GraphPaper | null
+  onClose: () => void
+  workspaceId: string
+  onRemovedFromWorkspace?: () => void
+}
+
+export default function PaperDetailPanel({
+  paper,
+  onClose,
+  workspaceId,
+  onRemovedFromWorkspace,
+}: Props) {
   const [commentText, setCommentText] = useState('')
   const [paperComments, setPaperComments] = useState([] as any[])
+  const [removing, setRemoving] = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
 
   useEffect(() => {
     const update = () => {
@@ -31,6 +56,29 @@ export default function PaperDetailPanel({ paper, onClose }) {
     setCommentText('')
   }
 
+  const handleRemoveFromWorkspace = async () => {
+    if (!paper?.id) return
+    if (
+      !window.confirm(
+        'Remove this paper from the workspace? The graph will update; you can add it again later.',
+      )
+    ) {
+      return
+    }
+    setRemoving(true)
+    setRemoveErr(null)
+    try {
+      await api.delete(`/workspaces/${workspaceId}/papers/${paper.id}`)
+      onRemovedFromWorkspace?.()
+      onClose()
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setRemoveErr(typeof d === 'string' ? d : 'Could not remove paper.')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
     <AnimatePresence>
       {paper && (
@@ -50,13 +98,24 @@ export default function PaperDetailPanel({ paper, onClose }) {
 
           <div className="mt-6 space-y-4">
             <h2 className="text-white font-semibold text-lg leading-snug">
-              {paper.title}
+              {paper.title ?? 'Paper'}
             </h2>
 
             <div className="flex gap-4 text-sm text-slate-400">
-              <span>{paper.year}</span>
-              <span>{paper.citation_count} citations</span>
+              <span>{paper.year ?? '—'}</span>
+              <span>{paper.citation_count ?? 0} citations</span>
             </div>
+
+            <button
+              type="button"
+              disabled={removing}
+              onClick={handleRemoveFromWorkspace}
+              className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 border border-red-500/50 rounded-lg px-3 py-2 w-full justify-center disabled:opacity-40"
+            >
+              <Trash2 size={16} />
+              {removing ? 'Removing…' : 'Remove from workspace'}
+            </button>
+            {removeErr && <p className="text-red-400 text-xs">{removeErr}</p>}
 
             {paper.venue && (
               <p className="text-sm text-slate-400 italic">{paper.venue}</p>
@@ -68,7 +127,7 @@ export default function PaperDetailPanel({ paper, onClose }) {
               </p>
             )}
 
-            {paper.url && (
+            {paper.url && typeof paper.url === 'string' && (
               <a
                 href={paper.url}
                 target="_blank"
