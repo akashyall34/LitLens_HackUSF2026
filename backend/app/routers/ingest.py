@@ -26,6 +26,9 @@ class IngestURLRequest(BaseModel):
 async def ingest_url(body: IngestURLRequest, current_user=Depends(get_current_user), redis=Depends(get_redis),):
     await check_rate_limit(redis, current_user["id"], "ingest_url", 100)
     job_id = str(uuid.uuid4())
+    await redis.set(f"job:{job_id}:status", "pending")
+    await redis.set(f"job:{job_id}:progress", "0")
+
     pool = await create_pool(RedisSettings.from_dsn(REDIS_URL))
 
     await pool.enqueue_job(
@@ -83,11 +86,16 @@ async def ingest_doi(
     doi = request.doi.strip()
 
     if doi.lower().startswith("doi:"):
-        doi = doi[4:]
+        doi = doi[4:].strip()
     if not doi.startswith("10."):
         raise HTTPException(
             status_code=400,
             detail="Invalid DOI. Must start with '10.' (e.g. 10.1145/3442188.3445922)",
+        )
+    if "/" not in doi:
+        raise HTTPException(
+            status_code=400,
+            detail="Incomplete DOI — include the suffix, e.g. 10.48550/arXiv.1706.03762 or 10.1145/3442188.3445922",
         )
 
     job_id = str(uuid.uuid4())

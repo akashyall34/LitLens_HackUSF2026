@@ -24,6 +24,11 @@ QA_PAPER_IN_WS_A = "b1000001-0001-4001-8001-000000000001"
 QA_PAPER_IN_WS_B = "b1000002-0002-4002-8002-000000000002"
 QA_PAPER_GAP = "c2000001-0001-4001-8001-000000000099"
 
+# Real S2 + DOI so “Add to workspace” / ingest URLs resolve (legacy seeds used fake ids).
+_GAP_DOI = "10.48550/arXiv.1706.03762"
+_GAP_S2 = "204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+_GAP_URL = f"https://www.semanticscholar.org/paper/{_GAP_S2}"
+
 # Must match `PaperEmbedding` / Gemini embedding size used in ingest.
 _EMB_DIM = 3072
 
@@ -50,7 +55,7 @@ def _semantic_cache_payload() -> str:
             "top_papers": [
                 {
                     "id": QA_PAPER_GAP,
-                    "title": "Foundational convergence analysis for large-scale stochastic optimization (demo reference)",
+                    "title": "Attention Is All You Need",
                 },
             ],
         },
@@ -61,7 +66,7 @@ def _semantic_cache_payload() -> str:
             "top_papers": [
                 {
                     "id": QA_PAPER_GAP,
-                    "title": "Foundational convergence analysis for large-scale stochastic optimization (demo reference)",
+                    "title": "Attention Is All You Need",
                 },
             ],
         },
@@ -74,7 +79,18 @@ def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
     wid = DEMO_WORKSPACE_ID
     authors_a = json.dumps(["M. Kapoor", "L. Chen"])
     authors_b = json.dumps(["J. Okonkwo"])
-    authors_gap = json.dumps(["R. Vaswani", "S. Müller", "T. Ng"])
+    authors_gap = json.dumps(
+        [
+            "A. Vaswani",
+            "N. Shazeer",
+            "N. Parmar",
+            "J. Uszkoreit",
+            "L. Jones",
+            "A. N. Gomez",
+            "Ł. Kaiser",
+            "I. Polosukhin",
+        ]
+    )
 
     for pid, title, abstract, year, doi, sid, authors_json in (
         (
@@ -97,11 +113,11 @@ def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
         ),
         (
             QA_PAPER_GAP,
-            "Foundational convergence analysis for large-scale stochastic optimization (demo reference)",
-            "Surveys assumptions under which SGD-family methods converge and how they map to practice.",
-            2018,
-            "10.9999/litlens.qa.sgdclassic",
-            "litlens-qa-sgdclassic",
+            "Attention Is All You Need",
+            "The dominant sequence transduction models are encoder-decoder RNNs; we propose the Transformer.",
+            2017,
+            _GAP_DOI,
+            _GAP_S2,
             authors_gap,
         ),
     ):
@@ -124,12 +140,44 @@ def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
                 "year": year,
                 "doi": doi,
                 "sid": sid,
-                "url": f"https://www.semanticscholar.org/paper/{sid}",
+                "url": _GAP_URL if pid == QA_PAPER_GAP else f"https://www.semanticscholar.org/paper/{sid}",
                 "cc": 1200,
                 "venue": "LitLens QA seed",
                 "authors": authors_json,
             },
         )
+
+    # Overwrite legacy gap rows (fake S2 ids) so ingest URLs always resolve.
+    db.execute(
+        text("""
+            UPDATE papers SET
+                title = :title,
+                abstract = :abstract,
+                year = :year,
+                doi = :doi,
+                semantic_scholar_id = :sid,
+                source_url = :url,
+                citation_count = :cc,
+                venue = :venue,
+                authors = CAST(:authors AS JSONB)
+            WHERE id = CAST(:id AS UUID)
+        """),
+        {
+            "id": QA_PAPER_GAP,
+            "title": "Attention Is All You Need",
+            "abstract": (
+                "The dominant sequence transduction models are encoder-decoder RNNs; "
+                "we propose the Transformer."
+            ),
+            "year": 2017,
+            "doi": _GAP_DOI,
+            "sid": _GAP_S2,
+            "url": _GAP_URL,
+            "cc": 120000,
+            "venue": "LitLens QA seed",
+            "authors": authors_gap,
+        },
+    )
 
     # Two workspace papers cite the same external (gap) paper.
     for src, dst in (

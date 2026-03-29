@@ -1,18 +1,8 @@
 import { useState } from 'react'
 import { api } from '../lib/auth'
+import { waitIngestDone } from '../lib/waitIngestDone'
 
 const WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'
-
-async function waitIngestDone(jobId: string): Promise<'done' | 'failed' | 'timeout'> {
-  for (let i = 0; i < 90; i++) {
-    const { data } = await api.get<{ status: string }>(`/ingest/status/${jobId}`)
-    const s = String(data.status ?? '')
-    if (s === 'done') return 'done'
-    if (s === 'failed') return 'failed'
-    await new Promise(r => setTimeout(r, 2000))
-  }
-  return 'timeout'
-}
 
 type Props = {
   open: boolean
@@ -119,12 +109,14 @@ export default function IngestPaperBar({ open, onClose, onSuccess }: Props) {
         </button>
       </div>
       <div className="space-y-1 pt-1 border-t border-slate-700">
-        <label className="text-slate-400 text-[10px]">DOI</label>
+        <label className="text-slate-400 text-[10px]">
+          DOI (must include the part after the slash)
+        </label>
         <input
           value={doi}
           onChange={e => setDoi(e.target.value)}
           disabled={busy}
-          placeholder="10.xxxx/…"
+          placeholder="10.48550/arXiv.1706.03762"
           className="w-full bg-slate-900 text-white text-xs px-2 py-1.5 rounded border border-slate-600"
         />
         <button

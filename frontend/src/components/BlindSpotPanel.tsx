@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { api } from '../lib/auth'
+import { waitIngestDone } from '../lib/waitIngestDone'
 
 const tabs = ['Citation Gaps', 'Conceptual Gaps']
 
@@ -11,17 +12,6 @@ type GapsState = {
   citation_gaps: any[]
   semantic_gaps: any[]
   team_coverage?: { member_email: string; papers_added: number }[]
-}
-
-async function waitIngestDone(jobId: string): Promise<'done' | 'failed' | 'timeout'> {
-  for (let i = 0; i < 90; i++) {
-    const { data } = await api.get<{ status: string }>(`/ingest/status/${jobId}`)
-    const s = String(data.status ?? '')
-    if (s === 'done') return 'done'
-    if (s === 'failed') return 'failed'
-    await new Promise(r => setTimeout(r, 2000))
-  }
-  return 'timeout'
 }
 
 type Props = {
@@ -241,8 +231,11 @@ export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged
                         } else {
                           setError('Ingest still running — refresh in a moment.')
                         }
-                      } catch {
-                        setError('Could not add paper to workspace.')
+                      } catch (e: unknown) {
+                        const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                        setError(
+                          typeof d === 'string' ? d : 'Could not add paper to workspace. Try a Semantic Scholar or DOI link.',
+                        )
                       } finally {
                         setAddingPaperId(null)
                       }
