@@ -5,6 +5,21 @@ from app.db import SessionLocal
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+
+def _natural_rag_key(row) -> str:
+    """Match graph dedupe: same logical paper may exist as multiple UUID rows."""
+    raw = (getattr(row, "doi", None) or "").strip()
+    if raw.lower().startswith("doi:"):
+        raw = raw[4:].strip()
+    doi = raw.lower() if raw else ""
+    if doi:
+        return f"doi:{doi}"
+    sid = (getattr(row, "semantic_scholar_id", None) or "").strip()
+    if sid:
+        return f"ss:{sid}"
+    return f"id:{row.paper_id}"
+
+
 def embed_query(query):
     response = client.models.embed_content(
         model="gemini-embedding-2-preview",
@@ -17,6 +32,7 @@ def semantic_search(query_embedding, workspace_id, limit=8):
     try:
         sql = text("""
             SELECT pe.paper_id, p.title, p.abstract, p.authors, p.year, p.venue,
+                   p.doi, p.semantic_scholar_id,
                    1 - (pe.embedding <=> CAST(:embedding AS vector)) AS score
             FROM paper_embeddings pe
             JOIN workspace_papers wp ON wp.paper_id = pe.paper_id
@@ -29,15 +45,15 @@ def semantic_search(query_embedding, workspace_id, limit=8):
         rows = db.execute(sql, {
             "embedding": str(query_embedding),
             "workspace_id": workspace_id,
-            "limit": limit * 4,
+            "limit": limit * 8,
         }).fetchall()
-        by_paper: dict[str, dict] = {}
+        by_key: dict[str, dict] = {}
         for row in rows:
-            pid = str(row.paper_id)
+            key = _natural_rag_key(row)
             score = float(row.score)
-            if pid not in by_paper or score > by_paper[pid]["score"]:
-                by_paper[pid] = {
-                    "paper_id": pid,
+            if key not in by_key or score > by_key[key]["score"]:
+                by_key[key] = {
+                    "paper_id": str(row.paper_id),
                     "title": row.title,
                     "abstract": row.abstract,
                     "authors": row.authors,
@@ -45,7 +61,7 @@ def semantic_search(query_embedding, workspace_id, limit=8):
                     "venue": row.venue,
                     "score": score,
                 }
-        ranked = sorted(by_paper.values(), key=lambda x: -x["score"])[:limit]
+        ranked = sorted(by_key.values(), key=lambda x: -x["score"])[:limit]
         return ranked
     finally:
         db.close()

@@ -1,5 +1,6 @@
 import asyncio
 import os
+from collections import defaultdict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -14,12 +15,18 @@ S3_PREFIX = "yjs-snapshots"
 
 _s3 = boto3.client("s3") if S3_BUCKET else None
 
+# One shared Y.Doc per workspace so all WebSocket clients merge into the same CRDT.
+_workspace_docs: dict[str, Y.YDoc] = {}
+_workspace_refcount: dict[str, int] = defaultdict(int)
+_workspace_lock = asyncio.Lock()
+_workspace_save_tasks: dict[str, asyncio.Task] = {}
+
 
 async def load_ydoc_from_s3(workspace_id: str) -> Y.YDoc:
     """Load existing Yjs doc from S3, or create a fresh one."""
     doc = Y.YDoc()
     if not _s3 or not S3_BUCKET:
-        return doc  # S3 not configured — return empty doc (Sprint 6 wires this up)
+        return doc
     try:
         key = f"{S3_PREFIX}/{workspace_id}.bin"
         response = _s3.get_object(Bucket=S3_BUCKET, Key=key)
@@ -34,21 +41,64 @@ async def load_ydoc_from_s3(workspace_id: str) -> Y.YDoc:
 async def save_ydoc_to_s3(workspace_id: str, doc: Y.YDoc) -> None:
     """Serialize Yjs doc and save to S3."""
     if not _s3 or not S3_BUCKET:
-        return  # S3 not configured — skip silently
+        return
     try:
         state = Y.encode_state_as_update(doc)
         key = f"{S3_PREFIX}/{workspace_id}.bin"
         _s3.put_object(Bucket=S3_BUCKET, Key=key, Body=bytes(state))
     except Exception:
-        pass  # Non-fatal — collaboration state is still in memory
+        pass
+
+
+async def _periodic_save_workspace(workspace_id: str, ydoc: Y.YDoc) -> None:
+    try:
+        while True:
+            await asyncio.sleep(60)
+            await save_ydoc_to_s3(workspace_id, ydoc)
+    except asyncio.CancelledError:
+        await save_ydoc_to_s3(workspace_id, ydoc)
+        raise
+
+
+async def _acquire_workspace_doc(workspace_id: str) -> Y.YDoc:
+    async with _workspace_lock:
+        if workspace_id not in _workspace_docs:
+            _workspace_docs[workspace_id] = await load_ydoc_from_s3(workspace_id)
+        _workspace_refcount[workspace_id] += 1
+        ydoc = _workspace_docs[workspace_id]
+        if workspace_id not in _workspace_save_tasks:
+            _workspace_save_tasks[workspace_id] = asyncio.create_task(
+                _periodic_save_workspace(workspace_id, ydoc)
+            )
+        return ydoc
+
+
+async def _release_workspace_doc(workspace_id: str) -> None:
+    task_to_cancel = None
+    ydoc_to_save = None
+    async with _workspace_lock:
+        _workspace_refcount[workspace_id] -= 1
+        if _workspace_refcount[workspace_id] > 0:
+            return
+        task_to_cancel = _workspace_save_tasks.pop(workspace_id, None)
+        ydoc_to_save = _workspace_docs.pop(workspace_id, None)
+        _workspace_refcount.pop(workspace_id, None)
+
+    if task_to_cancel:
+        task_to_cancel.cancel()
+        try:
+            await task_to_cancel
+        except asyncio.CancelledError:
+            pass
+    if ydoc_to_save:
+        await save_ydoc_to_s3(workspace_id, ydoc_to_save)
 
 
 async def websocket_endpoint(websocket: WebSocket, workspace_id: str, token: str):
     """
     WebSocket handler for real-time Yjs collaboration (US 5.8).
-    Saves doc to S3 every 60s and on disconnect (US 5.10).
+    All connections for the same workspace_id share one Y.Doc so CRDT state syncs.
     """
-    # Validate JWT from query param
     user_id = decode_access_token(token)
     if not user_id:
         await websocket.accept()
@@ -57,15 +107,7 @@ async def websocket_endpoint(websocket: WebSocket, workspace_id: str, token: str
 
     await websocket.accept()
 
-    ydoc = await load_ydoc_from_s3(workspace_id)
-
-    # US 5.10: periodic save every 60 seconds
-    async def periodic_save():
-        while True:
-            await asyncio.sleep(60)
-            await save_ydoc_to_s3(workspace_id, ydoc)
-
-    save_task = asyncio.create_task(periodic_save())
+    ydoc = await _acquire_workspace_doc(workspace_id)
 
     try:
         async with WebsocketProvider(ydoc, websocket):
@@ -73,5 +115,4 @@ async def websocket_endpoint(websocket: WebSocket, workspace_id: str, token: str
     except WebSocketDisconnect:
         pass
     finally:
-        save_task.cancel()
-        await save_ydoc_to_s3(workspace_id, ydoc)  # final save on disconnect
+        await _release_workspace_doc(workspace_id)
