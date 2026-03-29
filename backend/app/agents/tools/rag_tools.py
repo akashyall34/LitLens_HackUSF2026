@@ -149,8 +149,10 @@ Current question: {query}"""
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     llm_ms = (time.perf_counter() - t1) * 1000
 
+    text_out = (response.text or "").strip() or "(No text returned from the model.)"
+
     return {
-        "answer": response.text,
+        "answer": text_out,
         "sources": [{"paper_id": c["paper_id"], "title": c["title"], "score": c["score"]} for c in chunks],
         "vector_search_ms": round(vector_ms, 1),
         "llm_ms": round(llm_ms, 1),

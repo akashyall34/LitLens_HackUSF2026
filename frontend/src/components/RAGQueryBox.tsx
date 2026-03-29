@@ -37,7 +37,23 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
 
     const history = turns
       .filter(t => !t.failed)
-      .map(t => ({ query: t.query, answer: t.answer }))
+      .map(t => ({
+        query: String(t.query ?? ''),
+        answer: String(t.answer ?? ''),
+      }))
+
+    function formatAxiosDetail(d: unknown): string {
+      if (d == null) return ''
+      if (typeof d === 'string') return d
+      if (Array.isArray(d)) {
+        return d
+          .map((x: { msg?: string; loc?: unknown }) => x?.msg || JSON.stringify(x))
+          .filter(Boolean)
+          .join('; ')
+      }
+      if (typeof d === 'object' && 'msg' in (d as object)) return String((d as { msg: string }).msg)
+      return ''
+    }
 
     try {
       const { data } = await api.post<{
@@ -52,19 +68,22 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
         {
           id,
           query: q,
-          answer: data.answer,
+          answer: String(data.answer ?? '').trim() || '(Empty reply.)',
           sources: data.sources || [],
           vector_search_ms: data.vector_search_ms,
           llm_ms: data.llm_ms,
         },
       ])
-    } catch {
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: unknown }; status?: number } }
+      const detail = formatAxiosDetail(ax.response?.data?.detail)
+      const suffix = detail ? ` ${detail}` : ax.response?.status === 429 ? ' Rate limit — try tomorrow.' : ''
       setTurns(prev => [
         ...prev,
         {
           id,
           query: q,
-          answer: 'Request failed. Please try again.',
+          answer: `Request failed.${suffix}`.trim(),
           sources: [],
           failed: true,
         },
