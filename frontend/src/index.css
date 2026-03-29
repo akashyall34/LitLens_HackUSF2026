@@ -1,1 +1,90 @@
 @import "tailwindcss";
+
+:root {
+	--ll-bg-deep: #020617;
+	--ll-bg-panel: rgba(15, 23, 42, 0.82);
+	--ll-border: rgba(148, 163, 184, 0.28);
+	--ll-accent: rgba(34, 211, 238, 0.65);
+	--ll-accent-soft: rgba(34, 211, 238, 0.18);
+}
+
+body {
+	background: var(--ll-bg-deep);
+	color: #e2e8f0;
+}
+
+.app-topbar {
+	animation: ll-fade-up 220ms ease-out;
+}
+
+.app-canvas {
+	animation: ll-fade-up 260ms ease-out;
+}
+
+.litness-flow .react-flow__background {
+	opacity: 0.62;
+}
+
+.litness-flow .react-flow__attribution {
+	background: transparent;
+	color: rgba(148, 163, 184, 0.7);
+}
+
+.litness-flow .react-flow__controls {
+	box-shadow: 0 18px 34px rgba(2, 6, 23, 0.45);
+	border-radius: 12px;
+	overflow: hidden;
+	border: 1px solid var(--ll-border);
+	backdrop-filter: blur(10px);
+}
+
+.litness-flow .react-flow__controls-button {
+	background: var(--ll-bg-panel);
+	color: #cbd5e1;
+	border-bottom: 1px solid var(--ll-border);
+	transition: background-color 130ms ease, color 130ms ease;
+}
+
+.litness-flow .react-flow__controls-button:hover {
+	background: rgba(15, 23, 42, 0.95);
+	color: #ecfeff;
+}
+
+.litness-flow .react-flow__controls-button:last-child {
+	border-bottom: none;
+}
+
+.litness-flow .react-flow__minimap {
+	border-radius: 12px;
+	overflow: hidden;
+	box-shadow: 0 16px 30px rgba(2, 6, 23, 0.42);
+}
+
+.litness-flow .react-flow__minimap-mask {
+	fill: rgba(34, 211, 238, 0.12);
+}
+
+.litness-flow .react-flow__edge-path {
+	filter: drop-shadow(0 0 3px rgba(15, 23, 42, 0.42));
+}
+
+.litness-flow .react-flow__edge-text {
+	fill: #94a3b8;
+	font-size: 10px;
+}
+
+.litness-flow .react-flow__handle {
+	border: 1px solid rgba(15, 23, 42, 0.65);
+	background: var(--ll-accent);
+}
+
+@keyframes ll-fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}

@@ -140,16 +140,19 @@ export default function BlindSpotPanel({
           animate={{ x: 0 }}
           exit={{ x: '-100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed top-0 left-0 h-full w-96 bg-slate-800 shadow-2xl z-10 flex flex-col"
+          className="fixed left-4 top-24 z-20 flex h-[calc(100vh-7rem)] w-[24rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/85 shadow-2xl backdrop-blur-xl"
         >
-          <div className="flex items-center justify-between p-4 border-b border-slate-700">
-            <h2 className="text-white font-semibold text-lg">Blind Spots</h2>
-            <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <div>
+              <h2 className="text-base font-semibold text-slate-100">Blind Spots</h2>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Coverage Analysis</p>
+            </div>
+            <button type="button" onClick={onClose} className="text-slate-400 transition hover:text-slate-100">
               <X size={20} />
             </button>
           </div>
 
-          <div className="flex border-b border-slate-700">
+          <div className="grid grid-cols-2 border-b border-white/10 px-2 py-2">
             {tabs.map((tab, i) => (
               <button
                 key={tab}
@@ -159,10 +162,10 @@ export default function BlindSpotPanel({
                   setError(null)
                   if (i === 0) setScanMessage(null)
                 }}
-                className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                className={`rounded-lg px-2 py-2 text-xs font-medium transition ${
                   activeTab === i
-                    ? 'text-teal-400 border-b-2 border-teal-400'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-300/40'
+                    : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
                 }`}
               >
                 {tab}
@@ -170,18 +173,18 @@ export default function BlindSpotPanel({
             ))}
           </div>
 
-          <div className="px-4 py-2 border-b border-slate-700 space-y-2">
+          <div className="space-y-2 border-b border-white/10 px-4 py-3">
             {activeTab === 0 ? (
               <>
                 <button
                   type="button"
                   disabled={citationRefreshing || loading}
                   onClick={refreshCitationGaps}
-                  className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs py-2 rounded-lg font-medium"
+                  className="w-full rounded-lg border border-cyan-300/40 bg-cyan-500/20 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
                 >
                   {citationRefreshing ? 'Refreshing…' : 'Refresh citation gaps'}
                 </button>
-                <p className="text-slate-500 text-[10px] leading-snug">
+                <p className="text-[10px] leading-snug text-slate-400">
                   Citation gaps are derived from the citations already in your workspace (usually after ingest
                   pulls references). They show when two or more workspace papers cite the same paper that is{' '}
                   <strong>not</strong> in the workspace. Use refresh after adding papers—no AI on this tab.
@@ -193,30 +196,30 @@ export default function BlindSpotPanel({
                   type="button"
                   disabled={scanning}
                   onClick={runConceptualScan}
-                  className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs py-2 rounded-lg font-medium"
+                  className="w-full rounded-lg border border-indigo-300/40 bg-indigo-500/20 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-500/30 disabled:opacity-50"
                 >
                   {scanning ? 'Running AI conceptual scan…' : 'Run AI conceptual gap scan'}
                 </button>
-                <p className="text-slate-500 text-[10px] leading-snug">
+                <p className="text-[10px] leading-snug text-slate-400">
                   Primary signal: papers your workspace cites that are <strong>not</strong> in the workspace
                   (clustered + labeled with Gemini). If everything cited is already inside, you still get a{' '}
                   <strong>workspace summary</strong> from how your papers relate in embedding space (2+ papers
                   with embeddings). Re-running keeps prior Redis results if a run returns nothing.
                 </p>
-                {scanMessage && <p className="text-teal-400 text-xs">{scanMessage}</p>}
+                {scanMessage && <p className="text-xs text-cyan-300">{scanMessage}</p>}
               </>
             )}
             {error && <p className="text-red-400 text-xs">{error}</p>}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
             {loading && <p className="text-slate-400 text-xs">Loading…</p>}
 
             {gaps.team_coverage && gaps.team_coverage.length > 0 && (
-              <div className="bg-slate-900/50 rounded-lg p-3 space-y-1">
-                <p className="text-slate-400 text-xs font-medium">Team coverage</p>
+              <div className="space-y-1 rounded-xl border border-white/10 bg-slate-950/50 p-3">
+                <p className="text-xs font-medium text-slate-300">Team coverage</p>
                 {gaps.team_coverage.map(row => (
-                  <p key={row.member_email} className="text-slate-500 text-[11px]">
+                  <p key={row.member_email} className="text-[11px] text-slate-400">
                     {row.member_email}: {row.papers_added} papers added
                   </p>
                 ))}
@@ -233,9 +236,9 @@ export default function BlindSpotPanel({
 
             {activeTab === 0 &&
               gaps.citation_gaps.map(gap => (
-                <div key={gap.paper?.id} className="bg-slate-700 rounded-lg p-4 space-y-2">
+                <div key={gap.paper?.id} className="space-y-2 rounded-xl border border-white/10 bg-slate-950/55 p-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full">
+                    <span className="rounded-full bg-rose-500/85 px-2 py-0.5 text-xs text-white">
                       Cited by {gap.cited_by_count}
                     </span>
                     <span className="text-xs text-slate-400">{gap.paper?.year}</span>
@@ -302,19 +305,19 @@ export default function BlindSpotPanel({
               gaps.semantic_gaps.map((gap, idx) => (
                 <div
                   key={gap.label || gap.cluster_label || `gap-${idx}`}
-                  className="bg-slate-700 rounded-lg p-4 space-y-2"
+                  className="space-y-2 rounded-xl border border-white/10 bg-slate-950/55 p-4"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded-full">
+                    <span className="rounded-full bg-indigo-500/85 px-2 py-0.5 text-xs text-white">
                       {gap.label || gap.cluster_label || 'Cluster'}
                     </span>
                     <span className="text-xs text-slate-400">
                       {Math.round((gap.coverage_score ?? 0) * 100)}% covered
                     </span>
                   </div>
-                  <div className="w-full bg-slate-600 rounded-full h-1.5">
+                  <div className="h-1.5 w-full rounded-full bg-slate-700">
                     <div
-                      className="bg-purple-400 h-1.5 rounded-full"
+                      className="h-1.5 rounded-full bg-indigo-400"
                       style={{ width: `${Math.min(100, (gap.coverage_score ?? 0) * 100)}%` }}
                     />
                   </div>

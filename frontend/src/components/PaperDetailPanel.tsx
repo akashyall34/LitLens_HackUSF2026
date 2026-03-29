@@ -87,21 +87,22 @@ export default function PaperDetailPanel({
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed top-0 right-0 h-full w-96 bg-slate-800 shadow-2xl z-10 p-6 overflow-y-auto"
+          className="fixed right-4 top-24 z-20 h-[calc(100vh-7rem)] w-[24rem] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/85 p-6 shadow-2xl backdrop-blur-xl"
         >
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-100"
           >
             <X size={20} />
           </button>
 
           <div className="mt-6 space-y-4">
-            <h2 className="text-white font-semibold text-lg leading-snug">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Paper Details</p>
+            <h2 className="text-lg font-semibold leading-snug text-slate-100">
               {paper.title ?? 'Paper'}
             </h2>
 
-            <div className="flex gap-4 text-sm text-slate-400">
+            <div className="flex gap-4 text-sm text-slate-300">
               <span>{paper.year ?? '—'}</span>
               <span>{paper.citation_count ?? 0} citations</span>
             </div>
@@ -110,7 +111,7 @@ export default function PaperDetailPanel({
               type="button"
               disabled={removing}
               onClick={handleRemoveFromWorkspace}
-              className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 border border-red-500/50 rounded-lg px-3 py-2 w-full justify-center disabled:opacity-40"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-300/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-40"
             >
               <Trash2 size={16} />
               {removing ? 'Removing…' : 'Remove from workspace'}
@@ -118,11 +119,11 @@ export default function PaperDetailPanel({
             {removeErr && <p className="text-red-400 text-xs">{removeErr}</p>}
 
             {paper.venue && (
-              <p className="text-sm text-slate-400 italic">{paper.venue}</p>
+              <p className="text-sm italic text-slate-400">{paper.venue}</p>
             )}
 
             {paper.abstract && (
-              <p className="text-sm text-slate-300 leading-relaxed">
+              <p className="rounded-xl border border-white/10 bg-slate-950/45 p-3 text-sm leading-relaxed text-slate-300">
                 {paper.abstract}
               </p>
             )}
@@ -132,19 +133,19 @@ export default function PaperDetailPanel({
                 href={paper.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block text-sm text-teal-400 hover:underline"
+                className="inline-block text-sm text-cyan-300 transition hover:text-cyan-200 hover:underline"
               >
                 View on Semantic Scholar →
               </a>
             )}
 
-            <div className="pt-4 border-t border-slate-700 space-y-3">
-              <p className="text-slate-400 text-xs font-medium">Comments</p>
+            <div className="space-y-3 border-t border-white/10 pt-4">
+              <p className="text-xs font-medium text-slate-300">Comments</p>
 
               {paperComments.map((c, i) => (
-                <div key={i} className="space-y-0.5">
-                  <p className="text-slate-400 text-xs">{c.author}</p>
-                  <p className="text-slate-300 text-xs">{c.content}</p>
+                <div key={i} className="space-y-0.5 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5">
+                  <p className="text-xs text-slate-400">{c.author}</p>
+                  <p className="text-xs text-slate-200">{c.content}</p>
                 </div>
               ))}
 
@@ -153,11 +154,11 @@ export default function PaperDetailPanel({
                   value={commentText}
                   onChange={e => setCommentText(e.target.value)}
                   placeholder="Add a comment..."
-                  className="flex-1 bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:border-teal-400"
+                  className="flex-1 rounded-lg border border-white/15 bg-slate-900/90 px-3 py-1.5 text-xs text-white focus:border-cyan-300/60 focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="bg-teal-500 hover:bg-teal-400 text-white text-xs px-3 py-1.5 rounded-lg"
+                  className="rounded-lg border border-cyan-300/40 bg-cyan-500/20 px-3 py-1.5 text-xs text-cyan-100 transition hover:bg-cyan-500/30"
                 >
                   Post
                 </button>

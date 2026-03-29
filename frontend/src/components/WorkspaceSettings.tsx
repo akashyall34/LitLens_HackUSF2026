@@ -79,7 +79,7 @@ export default function WorkspaceSettings({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/60 z-20 flex items-center justify-center"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
@@ -87,24 +87,27 @@ export default function WorkspaceSettings({
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             onClick={e => e.stopPropagation()}
-            className="bg-slate-800 rounded-xl p-6 w-96 space-y-5"
+            className="w-96 space-y-5 rounded-2xl border border-white/10 bg-slate-900/85 p-6 shadow-2xl backdrop-blur-xl"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-white font-semibold text-lg">Workspace Settings</h2>
-              <button onClick={onClose} className="text-slate-400 hover:text-white">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">Workspace Settings</h2>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-200/70">Collaboration</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 transition hover:text-slate-100">
                 <X size={18} />
               </button>
             </div>
 
             <div>
-              <p className="text-slate-400 text-xs font-medium mb-2">Members</p>
+              <p className="mb-2 text-xs font-medium text-slate-300">Members</p>
               {teamErr && <p className="text-red-400 text-xs mb-2">{teamErr}</p>}
               {team && (
-                <ul className="space-y-2 mb-4 max-h-40 overflow-y-auto">
+                <ul className="mb-4 max-h-40 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/45 p-2">
                   {team.members.map(m => (
                     <li
                       key={m.user_id}
-                      className="flex items-center justify-between gap-2 text-xs text-slate-300"
+                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs text-slate-300"
                     >
                       <span className="truncate">
                         {m.email}
@@ -117,7 +120,7 @@ export default function WorkspaceSettings({
                           type="button"
                           disabled={removingId !== null}
                           onClick={() => removeMember(m.user_id)}
-                          className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-40"
+                          className="shrink-0 text-rose-300 transition hover:text-rose-200 disabled:opacity-40"
                         >
                           {removingId === m.user_id ? '…' : 'Remove'}
                         </button>
@@ -134,19 +137,19 @@ export default function WorkspaceSettings({
             </div>
 
             <div>
-              <p className="text-slate-400 text-xs mb-3">Invite a collaborator by email</p>
+              <p className="mb-3 text-xs text-slate-300">Invite a collaborator by email</p>
               <form onSubmit={handleInvite} className="flex gap-2">
                 <input
                   type="email"
                   placeholder="colleague@university.edu"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  className="flex-1 bg-slate-700 text-white text-sm px-3 py-2 rounded-lg border border-slate-600 focus:outline-none focus:border-teal-400"
+                  className="flex-1 rounded-lg border border-white/15 bg-slate-900/90 px-3 py-2 text-sm text-white focus:border-cyan-300/60 focus:outline-none"
                 />
                 <button
                   type="submit"
                   disabled={loading}
-                  className="bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-white text-sm px-3 py-2 rounded-lg"
+                  className="rounded-lg border border-cyan-300/40 bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100 transition hover:bg-cyan-500/30 disabled:opacity-50"
                 >
                   {loading ? '...' : 'Invite'}
                 </button>
@@ -154,7 +157,7 @@ export default function WorkspaceSettings({
             </div>
 
             {inviteStatus && (
-              <div className={`rounded-lg p-3 text-sm ${inviteStatus.success ? 'bg-teal-900/40 text-teal-300' : 'bg-red-900/40 text-red-300'}`}>
+              <div className={`rounded-lg border p-3 text-sm ${inviteStatus.success ? 'border-cyan-300/30 bg-cyan-500/10 text-cyan-200' : 'border-rose-300/30 bg-rose-500/10 text-rose-200'}`}>
                 {inviteStatus.success ? (
                   <div className="space-y-1">
                     <p>Invite created.</p>

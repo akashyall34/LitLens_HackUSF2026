@@ -32,6 +32,11 @@ function App() {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [ingestOpen, setIngestOpen] = useState(false)
 
+  const toolbarBtn =
+    'h-9 rounded-lg border border-white/10 bg-slate-900/80 px-3 text-sm font-medium text-slate-100 shadow-sm transition hover:border-cyan-300/40 hover:bg-slate-800/90'
+  const primaryToolbarBtn =
+    'h-9 rounded-lg border border-cyan-300/40 bg-cyan-500/20 px-3 text-sm font-semibold text-cyan-100 shadow-sm transition hover:bg-cyan-500/30'
+
   const workspaceId = user?.workspace_id ?? null
 
   // Refresh workspace_id from server (fixes stale localStorage and legacy demo membership).
@@ -128,20 +133,23 @@ function App() {
   if (!user.workspace_id) {
     if (workspaceRecoveryErr) {
       return (
-        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-slate-300 text-sm px-6 text-center">
-          <p>Could not load your workspace. Try signing out and signing in again.</p>
+        <div className="relative min-h-screen overflow-hidden bg-slate-950 px-6 py-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(34,211,238,0.18),transparent_40%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.16),transparent_38%)]" />
+          <div className="relative mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-slate-900/70 px-8 text-center text-sm text-slate-300 shadow-2xl backdrop-blur-xl">
+            <p>Could not load your workspace. Try signing out and signing in again.</p>
           <button
             type="button"
             onClick={logout}
-            className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg"
+            className="rounded-lg border border-cyan-300/40 bg-cyan-500/20 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/30"
           >
             Sign out
           </button>
+          </div>
         </div>
       )
     }
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-300 text-sm">
         Loading workspace…
       </div>
     )
@@ -149,51 +157,53 @@ function App() {
 
   return (
     <Suspense fallback={null}>
-      <div style={{ width: '100vw', height: '100vh', background: '#0f172a' }}>
-        <button
-          onClick={() => setBlindSpotOpen(true)}
-          className="absolute top-4 left-4 z-10 bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-2 rounded-lg"
-        >
-          View Blind Spots
-        </button>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="absolute top-4 left-48 z-10 bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-2 rounded-lg"
-        >
-          Settings
-        </button>
-        <button
-          type="button"
-          onClick={() => setIngestOpen(o => !o)}
-          className="absolute top-4 left-[19rem] z-10 bg-teal-700 hover:bg-teal-600 text-white text-sm px-3 py-2 rounded-lg"
-        >
-          Add paper
-        </button>
-        <button
-          onClick={logout}
-          className="absolute top-4 right-4 z-10 bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-2 rounded-lg"
-        >
-          Sign out
-        </button>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
-          onEdgeClick={(event, edge) => {
-            setMenuPos({ x: event.clientX, y: event.clientY })
-            setActiveEdge(edge)
-          }}
-        >
-          <Background color="#1e293b" />
-          <MiniMap
-            nodeColor={node => node.type === 'blindSpotNode' ? '#FF6B6B' : '#4ECDC4'}
-            style={{ background: '#1e293b' }}
-          />
-          <Controls />
-        </ReactFlow>
+      <div className="relative h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,rgba(34,211,238,0.2),transparent_33%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.16),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.94)_0%,rgba(2,6,23,1)_65%)]" />
+
+        <div className="app-topbar absolute inset-x-4 top-4 z-20 flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/65 px-4 py-3 shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:block">
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-200/75">LitLens</p>
+              <h1 className="text-sm font-semibold text-slate-100">Research Graph Workspace</h1>
+            </div>
+            <button onClick={() => setBlindSpotOpen(true)} className={toolbarBtn}>
+              View Blind Spots
+            </button>
+            <button onClick={() => setSettingsOpen(true)} className={toolbarBtn}>
+              Settings
+            </button>
+            <button type="button" onClick={() => setIngestOpen(o => !o)} className={primaryToolbarBtn}>
+              Add paper
+            </button>
+          </div>
+          <button onClick={logout} className={toolbarBtn}>
+            Sign out
+          </button>
+        </div>
+
+        <div className="app-canvas absolute inset-x-4 bottom-4 top-24 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/45 shadow-2xl backdrop-blur-sm">
+          <ReactFlow
+            className="litness-flow"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            fitView
+            onEdgeClick={(event, edge) => {
+              setMenuPos({ x: event.clientX, y: event.clientY })
+              setActiveEdge(edge)
+            }}
+          >
+            <Background color="#334155" gap={24} />
+            <MiniMap
+              nodeColor={node => node.type === 'blindSpotNode' ? '#FF6B6B' : '#4ECDC4'}
+              style={{ background: '#0f172a', border: '1px solid rgba(148, 163, 184, 0.35)' }}
+            />
+            <Controls />
+          </ReactFlow>
+        </div>
+
         <PaperDetailPanel
           paper={selectedPaper}
           onClose={() => setSelectedPaper(null)}
