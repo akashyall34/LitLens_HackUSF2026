@@ -16,6 +16,11 @@ from app.auth.utils import (
 )
 from app.db import SessionLocal
 from app.demo_workspace import ensure_demo_workspace_for_user
+from app.seed_qa_blindspots import (
+    seed_qa_blindspots_data,
+    should_seed_qa_blindspots,
+    touch_qa_blindspots_redis,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -83,7 +88,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         },
     )
     ensure_demo_workspace_for_user(db, user_id)
+    if should_seed_qa_blindspots(email):
+        seed_qa_blindspots_data(db, user_id)
     db.commit()
+    if should_seed_qa_blindspots(email):
+        touch_qa_blindspots_redis()
 
     return {
         "access_token": create_access_token(user_id),
@@ -108,10 +117,16 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         )
 
     ensure_demo_workspace_for_user(db, row.id)
+    if should_seed_qa_blindspots(row.email):
+        seed_qa_blindspots_data(db, row.id)
+
+    refresh_plain = _issue_refresh_token(row.id, db)
+    if should_seed_qa_blindspots(row.email):
+        touch_qa_blindspots_redis()
 
     return {
         "access_token": create_access_token(row.id),
-        "refresh_token": _issue_refresh_token(row.id, db),
+        "refresh_token": refresh_plain,
         "token_type": "bearer",
         "user": {"id": row.id, "email": row.email},
     }
@@ -140,14 +155,27 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
+    user_row = db.execute(
+        text("SELECT email FROM users WHERE id = CAST(:id AS UUID)"),
+        {"id": row.user_id},
+    ).fetchone()
+    user_email = user_row[0] if user_row else ""
+
     # Rotate: delete old token, issue new pair
     db.execute(
         text("DELETE FROM refresh_tokens WHERE token_hash = :hash"),
         {"hash": token_hash},
     )
     ensure_demo_workspace_for_user(db, row.user_id)
+    if should_seed_qa_blindspots(user_email):
+        seed_qa_blindspots_data(db, row.user_id)
+
+    refresh_plain = _issue_refresh_token(row.user_id, db)
+    if should_seed_qa_blindspots(user_email):
+        touch_qa_blindspots_redis()
+
     return {
         "access_token": create_access_token(row.user_id),
-        "refresh_token": _issue_refresh_token(row.user_id, db),
+        "refresh_token": refresh_plain,
         "token_type": "bearer",
     }
