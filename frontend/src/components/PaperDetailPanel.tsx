@@ -1,7 +1,36 @@
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { comments } from '../lib/collaboration'
 
 export default function PaperDetailPanel({ paper, onClose }) {
+  const [commentText, setCommentText] = useState('')
+  const [paperComments, setPaperComments] = useState([] as any[])
+
+  useEffect(() => {
+    const update = () => {
+      setPaperComments(
+        (comments.toArray() as any[]).filter(c => c.paper_id === paper?.id)
+      )
+    }
+    update()
+    comments.observe(update)
+    return () => comments.unobserve(update)
+  }, [paper?.id])
+
+  const handleComment = (e) => {
+    e.preventDefault()
+    if (!commentText.trim() || !paper) return
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    comments.push([{
+      paper_id: paper.id,
+      author: user.email,
+      content: commentText,
+      created_at: new Date().toISOString(),
+    }])
+    setCommentText('')
+  }
+
   return (
     <AnimatePresence>
       {paper && (
@@ -49,6 +78,32 @@ export default function PaperDetailPanel({ paper, onClose }) {
                 View on Semantic Scholar →
               </a>
             )}
+
+            <div className="pt-4 border-t border-slate-700 space-y-3">
+              <p className="text-slate-400 text-xs font-medium">Comments</p>
+
+              {paperComments.map((c, i) => (
+                <div key={i} className="space-y-0.5">
+                  <p className="text-slate-400 text-xs">{c.author}</p>
+                  <p className="text-slate-300 text-xs">{c.content}</p>
+                </div>
+              ))}
+
+              <form onSubmit={handleComment} className="flex gap-2">
+                <input
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  placeholder="Add a comment..."
+                  className="flex-1 bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-600 focus:outline-none focus:border-teal-400"
+                />
+                <button
+                  type="submit"
+                  className="bg-teal-500 hover:bg-teal-400 text-white text-xs px-3 py-1.5 rounded-lg"
+                >
+                  Post
+                </button>
+              </form>
+            </div>
           </div>
         </motion.div>
       )}
