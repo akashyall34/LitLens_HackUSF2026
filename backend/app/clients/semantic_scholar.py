@@ -46,7 +46,7 @@ def fetch_semantic_scholar_metadata(paper_identifier: str) -> dict[str, Any]:
     return {
         "title": data.get("title"),
         "abstract": data.get("abstract"),
-        "authors": [author.get("name") for author in data.get("authors", [])],
+        "authors": [author.get("name") for author in (data.get("authors") or [])],
         "year": data.get("year"),
         "semantic_id": data.get("paperId"),
         "citation_count": data.get("citationCount", 0),
@@ -54,7 +54,7 @@ def fetch_semantic_scholar_metadata(paper_identifier: str) -> dict[str, Any]:
         "url": data.get("url"),
         "references": [
             ref.get("paperId")
-            for ref in data.get("references", [])
+            for ref in (data.get("references") or [])
             if ref.get("paperId")
         ],
     }
