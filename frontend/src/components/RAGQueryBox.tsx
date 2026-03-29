@@ -88,13 +88,36 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [isOpen, setIsOpen] = useState(true)
+  const [dragDeltaY, setDragDeltaY] = useState(0)
+  const [sheetHeight, setSheetHeight] = useState(380)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const dragStartY = useRef<number | null>(null)
+  const dragStartOffset = useRef(0)
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
   }, [turns, loading])
+
+  useEffect(() => {
+    const el = sheetRef.current
+    if (!el) return
+
+    const updateHeight = () => setSheetHeight(el.offsetHeight)
+    updateHeight()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const obs = new ResizeObserver(updateHeight)
+      obs.observe(el)
+      return () => obs.disconnect()
+    }
+
+    window.addEventListener('resize', updateHeight)
+    return () => window.removeEventListener('resize', updateHeight)
+  }, [turns.length, loading, isOpen])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -152,11 +175,62 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  const revealHeight = 46
+  const closedOffset = Math.max(0, sheetHeight - revealHeight)
+  const restingOffset = isOpen ? 0 : closedOffset
+  const translateY = Math.min(closedOffset, Math.max(0, restingOffset + dragDeltaY))
+
+  const onHandlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    dragStartY.current = e.clientY
+    dragStartOffset.current = restingOffset
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onHandlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (dragStartY.current == null) return
+    const rawOffset = dragStartOffset.current + (e.clientY - dragStartY.current)
+    const clampedOffset = Math.min(closedOffset, Math.max(0, rawOffset))
+    setDragDeltaY(clampedOffset - restingOffset)
+  }
+
+  const onHandlePointerUp = () => {
+    if (dragStartY.current == null) return
+    const finalOffset = Math.min(closedOffset, Math.max(0, restingOffset + dragDeltaY))
+    const shouldClose = finalOffset > closedOffset * 0.45
+    setIsOpen(!shouldClose)
+    setDragDeltaY(0)
+    dragStartY.current = null
+  }
+
   return (
-    <div className="absolute bottom-4 left-1/2 z-20 flex max-h-[min(56vh,460px)] w-[min(680px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2">
+    <div
+      ref={sheetRef}
+      className="absolute bottom-4 left-1/2 z-20 flex max-h-[min(56vh,460px)] w-[min(680px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2 rounded-2xl border border-white/10 bg-slate-900/80 p-2 shadow-2xl backdrop-blur-xl"
+      style={{
+        transform: `translate(-50%, ${translateY}px)`,
+        transition: dragStartY.current == null ? 'transform 180ms ease-out' : 'none',
+      }}
+    >
+      <button
+        type="button"
+        aria-label={isOpen ? 'Collapse chat' : 'Expand chat'}
+        onClick={() => {
+          setIsOpen(o => !o)
+          setDragDeltaY(0)
+        }}
+        onPointerDown={onHandlePointerDown}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={onHandlePointerUp}
+        onPointerCancel={onHandlePointerUp}
+        className="flex items-center justify-center rounded-xl py-1.5 text-[11px] text-slate-300 hover:bg-slate-800/70"
+      >
+        <span className="mr-2 h-1.5 w-14 rounded-full bg-slate-500/70" />
+        {isOpen ? 'Pull down to close' : 'Pull up to open'}
+      </button>
+
       <div
         ref={scrollRef}
-        className="flex min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-4 shadow-2xl backdrop-blur-xl"
+        className="flex min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden rounded-xl border border-white/10 bg-slate-900/70 p-4"
       >
         {turns.length === 0 && !loading && (
           <p className="px-2 py-6 text-center text-xs text-slate-400">
