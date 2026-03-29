@@ -14,6 +14,7 @@ from app.db import SessionLocal
 from app.dependencies import get_current_user
 from app.gaps.citation import detect_citation_gaps
 from app.redis_client import get_redis
+from app.analytics import track_event
 
 router = APIRouter(prefix="/gaps", tags=["gaps"], dependencies=[Depends(get_current_user)])
 
@@ -33,6 +34,7 @@ def get_db():
 @router.get("/{workspace_id}")
 async def get_gaps(
     workspace_id: str,
+    current_user=Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
     db: Session = Depends(get_db),
 ):
@@ -76,6 +78,14 @@ async def get_gaps(
         {"member_email": row.email, "papers_added": int(row.paper_count)}
         for row in team_rows
     ]
+
+    total_gaps = len(citation_gaps) + len(semantic_gaps)
+    if total_gaps > 0:
+        await track_event(
+            current_user["id"],
+            "blind_spot_surfaced",
+            {"workspace_id": workspace_id, "citation_gaps": len(citation_gaps), "semantic_gaps": len(semantic_gaps)},
+        )
 
     return {
         "citation_gaps": citation_gaps,

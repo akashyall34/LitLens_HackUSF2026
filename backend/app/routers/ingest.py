@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.redis_client import get_redis, check_rate_limit
 from app.dependencies import get_current_user
+from app.analytics import track_event
 
 router = APIRouter(prefix="/ingest", tags=["ingest"], dependencies=[Depends(get_current_user)])
 
@@ -35,6 +36,7 @@ async def ingest_url(body: IngestURLRequest, current_user=Depends(get_current_us
     )
     await pool.aclose()
 
+    await track_event(current_user["id"], "paper_ingested", {"workspace_id": body.workspace_id, "url": body.url})
     return {"job_id": job_id}
 
 
@@ -96,4 +98,5 @@ async def ingest_doi(
     )
     await pool.aclose()
 
+    await track_event(str(current_user["id"]), "paper_ingested", {"workspace_id": request.workspace_id, "doi": doi})
     return {"job_id": job_id, "status": "pending"}
