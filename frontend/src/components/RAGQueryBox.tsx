@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { api } from '../lib/auth'
 
 const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -15,14 +16,14 @@ export default function RAGQueryBox() {
     setLoading(true)
     setResult(null)
 
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/rag/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, workspace_id: WORKSPACE_ID }),
-    })
-    const data = await res.json()
-    setResult(data)
-    setLoading(false)
+    try {
+      const { data } = await api.post('/rag/query', { query, workspace_id: WORKSPACE_ID })
+      setResult(data)
+    } catch {
+      setResult({ answer: 'Request failed. Please try again.', sources: [] })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

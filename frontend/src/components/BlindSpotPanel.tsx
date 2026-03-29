@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { api } from '../lib/auth'
 
 const tabs = ['Citation Gaps', 'Conceptual Gaps']
 
@@ -11,9 +12,9 @@ export default function BlindSpotPanel({ open, onClose }) {
   const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/gaps/${WORKSPACE_ID}`)
-      .then(res => res.json())
-      .then(data => setGaps(data))
+    api.get(`/gaps/${WORKSPACE_ID}`)
+      .then(res => setGaps(res.data))
+      .catch(() => {})
   }, [])
 
   return (
