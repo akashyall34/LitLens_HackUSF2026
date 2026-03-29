@@ -17,9 +17,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workspaces", tags=["workspaces"], dependencies=[Depends(get_current_user)])
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5173")
-# Invite links must open the SPA (Vercel), not the API host
-FRONTEND_BASE_URL = (os.getenv("FRONTEND_ORIGIN") or APP_BASE_URL).rstrip("/")
 SES_FROM_EMAIL = os.getenv("SES_FROM_EMAIL", "noreply@litlens.app")
+
+
+def _invite_base_url() -> str:
+    """Base URL for /join links. CORS sometimes sets FRONTEND_ORIGIN=* — that is invalid here."""
+    for raw in (os.getenv("FRONTEND_ORIGIN"), os.getenv("APP_BASE_URL"), "http://localhost:5173"):
+        if not raw:
+            continue
+        u = raw.strip().rstrip("/")
+        if u == "*" or not u.startswith(("http://", "https://")):
+            continue
+        return u
+    logger.warning("invite_base_url: no valid FRONTEND_ORIGIN or APP_BASE_URL")
+    return "http://localhost:5173"
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 
 _ses = None
@@ -100,7 +111,7 @@ def invite_member(
     invite_id = str(uuid.uuid4())
     invite_token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    join_url = f"{FRONTEND_BASE_URL}/join?token={invite_token}"
+    join_url = f"{_invite_base_url()}/join?token={invite_token}"
 
     db.execute(
         text("""
