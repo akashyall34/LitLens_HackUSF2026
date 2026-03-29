@@ -56,6 +56,7 @@ async def ingest_paper(ctx, url, workspace_id):
         )
         db.add(workspace_paper)
         db.commit()
+        paper_id = str(paper.id)
 
     except Exception:
         db.rollback()
@@ -67,9 +68,9 @@ async def ingest_paper(ctx, url, workspace_id):
 
     await redis.set(f"job:{job_id}:progress", 100)
     await redis.set(f"job:{job_id}:status", "done")
-    await redis.set(f"job:{job_id}:paper_id", str(paper.id))
+    await redis.set(f"job:{job_id}:paper_id", paper_id)
 
-    return {"paper_id": str(paper.id)}
+    return {"paper_id": paper_id}
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
