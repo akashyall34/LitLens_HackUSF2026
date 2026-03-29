@@ -51,6 +51,95 @@ class JoinRequest(BaseModel):
     token: str
 
 
+def _parse_uuid(wid: str, label: str = "workspace_id") -> str:
+    try:
+        return str(uuid.UUID(wid))
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}") from None
+
+
+@router.get("/{workspace_id}/members")
+def list_workspace_members(
+    workspace_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    wid = _parse_uuid(workspace_id)
+    in_ws = db.execute(
+        text("""
+            SELECT 1 FROM workspace_members
+            WHERE workspace_id = CAST(:wid AS UUID) AND user_id = CAST(:uid AS UUID)
+        """),
+        {"wid": wid, "uid": current_user["id"]},
+    ).fetchone()
+    if not in_ws:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+    ws = db.execute(
+        text("SELECT owner_id::text FROM workspaces WHERE id = CAST(:wid AS UUID)"),
+        {"wid": wid},
+    ).fetchone()
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    owner_id = ws._mapping["owner_id"]
+
+    rows = db.execute(
+        text("""
+            SELECT u.id::text AS user_id, u.email, wm.role
+            FROM workspace_members wm
+            JOIN users u ON u.id = wm.user_id
+            WHERE wm.workspace_id = CAST(:wid AS UUID)
+            ORDER BY LOWER(u.email)
+        """),
+        {"wid": wid},
+    ).fetchall()
+
+    members = [
+        {"user_id": r._mapping["user_id"], "email": r._mapping["email"], "role": r._mapping["role"]}
+        for r in rows
+    ]
+    return {"owner_id": owner_id, "members": members}
+
+
+@router.delete("/{workspace_id}/members/{member_user_id}")
+def remove_workspace_member(
+    workspace_id: str,
+    member_user_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    wid = _parse_uuid(workspace_id)
+    target_uid = _parse_uuid(member_user_id, "user_id")
+
+    ws = db.execute(
+        text("SELECT owner_id::text FROM workspaces WHERE id = CAST(:wid AS UUID)"),
+        {"wid": wid},
+    ).fetchone()
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    owner_id = ws._mapping["owner_id"]
+    if str(owner_id) != str(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Only the workspace owner can remove members")
+
+    if str(target_uid) == str(owner_id):
+        raise HTTPException(status_code=400, detail="Cannot remove the workspace owner")
+
+    result = db.execute(
+        text("""
+            DELETE FROM workspace_members
+            WHERE workspace_id = CAST(:wid AS UUID) AND user_id = CAST(:uid AS UUID)
+        """),
+        {"wid": wid, "uid": target_uid},
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Member not in this workspace")
+    db.commit()
+    return {"removed": True, "user_id": target_uid}
+
+
 @router.post("/join")
 def join_workspace(
     body: JoinRequest,

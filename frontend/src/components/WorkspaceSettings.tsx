@@ -1,14 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
-import { api } from '../lib/auth'
+import { api, getUser } from '../lib/auth'
 
 const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
+
+type MemberRow = { user_id: string; email: string; role: string }
 
 export default function WorkspaceSettings({ open, onClose }) {
   const [email, setEmail] = useState('')
   const [inviteStatus, setInviteStatus] = useState(null as any)
   const [loading, setLoading] = useState(false)
+  const [team, setTeam] = useState(null as { owner_id: string; members: MemberRow[] } | null)
+  const [teamErr, setTeamErr] = useState<string | null>(null)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setTeamErr(null)
+    api
+      .get<{ owner_id: string; members: MemberRow[] }>(`/workspaces/${WORKSPACE_ID}/members`)
+      .then(({ data }) => setTeam(data))
+      .catch(() => setTeamErr('Could not load members.'))
+  }, [open])
 
   const handleInvite = async (e) => {
     e.preventDefault()
@@ -28,6 +42,27 @@ export default function WorkspaceSettings({ open, onClose }) {
       setInviteStatus({ success: false, message: err.response?.data?.detail || 'Invite failed' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const me = getUser()
+  const iAmOwner = me && team && String(me.id) === String(team.owner_id)
+
+  const removeMember = async (userId: string) => {
+    if (!window.confirm('Remove this person from the workspace?')) return
+    setRemovingId(userId)
+    setTeamErr(null)
+    try {
+      await api.delete(`/workspaces/${WORKSPACE_ID}/members/${userId}`)
+      const { data } = await api.get<{ owner_id: string; members: MemberRow[] }>(
+        `/workspaces/${WORKSPACE_ID}/members`,
+      )
+      setTeam(data)
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setTeamErr(typeof d === 'string' ? d : 'Remove failed.')
+    } finally {
+      setRemovingId(null)
     }
   }
 
@@ -53,6 +88,44 @@ export default function WorkspaceSettings({ open, onClose }) {
               <button onClick={onClose} className="text-slate-400 hover:text-white">
                 <X size={18} />
               </button>
+            </div>
+
+            <div>
+              <p className="text-slate-400 text-xs font-medium mb-2">Members</p>
+              {teamErr && <p className="text-red-400 text-xs mb-2">{teamErr}</p>}
+              {team && (
+                <ul className="space-y-2 mb-4 max-h-40 overflow-y-auto">
+                  {team.members.map(m => (
+                    <li
+                      key={m.user_id}
+                      className="flex items-center justify-between gap-2 text-xs text-slate-300"
+                    >
+                      <span className="truncate">
+                        {m.email}
+                        {String(m.user_id) === String(team.owner_id) && (
+                          <span className="text-slate-500 ml-1">(owner)</span>
+                        )}
+                      </span>
+                      {iAmOwner && String(m.user_id) !== String(team.owner_id) && (
+                        <button
+                          type="button"
+                          disabled={removingId !== null}
+                          onClick={() => removeMember(m.user_id)}
+                          className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-40"
+                        >
+                          {removingId === m.user_id ? '…' : 'Remove'}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!iAmOwner && team && (
+                <p className="text-slate-500 text-[10px] mb-3">
+                  Only the workspace owner can remove people. Owner is whoever created this demo workspace
+                  first.
+                </p>
+              )}
             </div>
 
             <div>
