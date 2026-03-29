@@ -7,13 +7,15 @@ import redis.asyncio as aioredis
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.dependencies import get_current_user
 from app.gaps.citation import detect_citation_gaps
 from app.redis_client import get_redis
 
-router = APIRouter(prefix="/gaps", tags=["gaps"])
+router = APIRouter(prefix="/gaps", tags=["gaps"], dependencies=[Depends(get_current_user)])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 CACHE_TTL_SECONDS = 3600
@@ -58,7 +60,30 @@ async def get_gaps(
 
     semantic_gaps = json.loads(cached_semantic) if cached_semantic else []
 
-    return {"citation_gaps": citation_gaps, "semantic_gaps": semantic_gaps}
+    # ── US 5.9: Team coverage — papers per member ─────────────────────────
+    team_rows = db.execute(
+        text("""
+            SELECT u.email, COUNT(wp.paper_id) AS paper_count
+            FROM workspace_members wm
+            JOIN users u ON u.id = wm.user_id
+            LEFT JOIN workspace_papers wp ON wp.workspace_id = wm.workspace_id
+                                        AND wp.added_by = wm.user_id
+            WHERE wm.workspace_id = :wid
+            GROUP BY u.email
+        """),
+        {"wid": workspace_id},
+    ).fetchall()
+
+    team_coverage = [
+        {"member_email": row.email, "papers_added": int(row.paper_count)}
+        for row in team_rows
+    ]
+
+    return {
+        "citation_gaps": citation_gaps,
+        "semantic_gaps": semantic_gaps,
+        "team_coverage": team_coverage,
+    }
 
 
 # ── US 3.4 ─────────────────────────────────────────────────────────────────

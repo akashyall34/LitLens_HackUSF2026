@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.redis_client import get_redis
+from app.dependencies import get_current_user
 
-router = APIRouter(prefix="/ingest", tags=["ingest"])
+router = APIRouter(prefix="/ingest", tags=["ingest"], dependencies=[Depends(get_current_user)])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 

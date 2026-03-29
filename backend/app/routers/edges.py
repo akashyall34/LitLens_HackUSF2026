@@ -9,8 +9,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.dependencies import get_current_user
 
-router = APIRouter(tags=["ai"])
+router = APIRouter(tags=["ai"], dependencies=[Depends(get_current_user)])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _client = genai.Client(api_key=GEMINI_API_KEY)

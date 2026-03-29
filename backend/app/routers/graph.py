@@ -9,9 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.dependencies import get_current_user
 
 
-router = APIRouter(prefix="/graph", tags=["graph"])
+router = APIRouter(prefix="/graph", tags=["graph"], dependencies=[Depends(get_current_user)])
 
 # 8 visually distinct colors — one per cluster (cycles if k > 8)
 CLUSTER_COLORS = [
