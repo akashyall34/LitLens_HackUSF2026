@@ -111,13 +111,29 @@ def _format_conversation_history(
     )
 
 
+def _retrieval_query_text(query: str, history: list[dict]) -> str:
+    """Short follow-ups embed poorly alone; fold in the last turn for vector search only."""
+    q = (query or "").strip()
+    if not history:
+        return q
+    last = history[-1]
+    prev_q = (last.get("query") or "").strip()
+    prev_a = (last.get("answer") or "").strip()
+    if not prev_q:
+        return q
+    if len(prev_a) > 500:
+        prev_a = prev_a[:497].rstrip() + "…"
+    return f"{q}\n\nPrior question: {prev_q}\nPrior answer (excerpt): {prev_a}"
+
+
 def answer_rag_query(query, workspace_id, history: list[dict] | None = None):
     import time
 
     history = history or []
 
     t0 = time.perf_counter()
-    query_embedding = embed_query(query)
+    embed_text = _retrieval_query_text(query, history)
+    query_embedding = embed_query(embed_text)
     chunks = semantic_search(query_embedding, workspace_id)
     vector_ms = (time.perf_counter() - t0) * 1000
 

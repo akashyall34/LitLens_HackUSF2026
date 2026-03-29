@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react'
+import axios from 'axios'
 import { api } from '../lib/auth'
 
 type Source = { paper_id: string; title: string; score: number }
@@ -11,6 +12,76 @@ type ChatTurn = {
   vector_search_ms?: number
   llm_ms?: number
   failed?: boolean
+}
+
+/** Keep follow-up payloads small for reverse proxies and the model context. */
+const RAG_HISTORY_MAX_TURNS = 10
+const RAG_HISTORY_MAX_QUERY_LEN = 2000
+const RAG_HISTORY_MAX_ANSWER_LEN = 1200
+
+function clipRagHistory(turns: ChatTurn[]): { query: string; answer: string }[] {
+  return turns
+    .filter(t => !t.failed)
+    .slice(-RAG_HISTORY_MAX_TURNS)
+    .map(t => {
+      let query = String(t.query ?? '')
+      let answer = String(t.answer ?? '')
+      if (query.length > RAG_HISTORY_MAX_QUERY_LEN) {
+        query = `${query.slice(0, RAG_HISTORY_MAX_QUERY_LEN - 1)}…`
+      }
+      if (answer.length > RAG_HISTORY_MAX_ANSWER_LEN) {
+        answer = `${answer.slice(0, RAG_HISTORY_MAX_ANSWER_LEN - 1)}…`
+      }
+      return { query, answer }
+    })
+}
+
+function describeRagError(e: unknown): string {
+  if (!axios.isAxiosError(e)) {
+    return e instanceof Error ? e.message : 'Unknown error.'
+  }
+
+  const status = e.response?.status
+  const raw = e.response?.data
+
+  const fromDetail = (d: unknown): string => {
+    if (d == null) return ''
+    if (typeof d === 'string') return d
+    if (Array.isArray(d)) {
+      return d
+        .map((x: { msg?: string }) => x?.msg)
+        .filter(Boolean)
+        .join('; ')
+    }
+    return ''
+  }
+
+  let detail = ''
+  if (raw && typeof raw === 'object' && 'detail' in raw) {
+    detail = fromDetail((raw as { detail: unknown }).detail)
+  }
+  if (!detail && typeof raw === 'string') {
+    const t = raw.trim()
+    if (t && !t.startsWith('<') && t.length < 600) {
+      detail = t.slice(0, 400)
+    }
+  }
+
+  if (detail) return detail
+  if (status === 429) return 'Rate limit (try again later).'
+  if (status === 401 || status === 403) return 'Session expired — sign in again.'
+  if (status === 413) return 'Request too large — tap Clear and start a shorter thread.'
+  if (status === 502 || status === 503) return 'API or model unavailable (HTTP ' + status + ').'
+  if (status != null) return 'HTTP ' + status + ' from server.'
+
+  const msg = e.message || ''
+  if (msg === 'Network Error') {
+    return 'Network error (offline, CORS, or API URL mismatch).'
+  }
+  if (e.code === 'ECONNABORTED') {
+    return 'Request timed out — try a shorter question or Clear.'
+  }
+  return msg || 'No response from server.'
 }
 
 export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
@@ -35,25 +106,7 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
 
     const id = crypto.randomUUID()
 
-    const history = turns
-      .filter(t => !t.failed)
-      .map(t => ({
-        query: String(t.query ?? ''),
-        answer: String(t.answer ?? ''),
-      }))
-
-    function formatAxiosDetail(d: unknown): string {
-      if (d == null) return ''
-      if (typeof d === 'string') return d
-      if (Array.isArray(d)) {
-        return d
-          .map((x: { msg?: string; loc?: unknown }) => x?.msg || JSON.stringify(x))
-          .filter(Boolean)
-          .join('; ')
-      }
-      if (typeof d === 'object' && 'msg' in (d as object)) return String((d as { msg: string }).msg)
-      return ''
-    }
+    const history = clipRagHistory(turns)
 
     try {
       const { data } = await api.post<{
@@ -61,7 +114,11 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
         sources?: Source[]
         vector_search_ms?: number
         llm_ms?: number
-      }>('/rag/query', { query: q, workspace_id: workspaceId, history })
+      }>(
+        '/rag/query',
+        { query: q, workspace_id: workspaceId, history },
+        { timeout: 120_000 },
+      )
 
       setTurns(prev => [
         ...prev,
@@ -75,15 +132,17 @@ export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
         },
       ])
     } catch (e: unknown) {
-      const ax = e as { response?: { data?: { detail?: unknown }; status?: number } }
-      const detail = formatAxiosDetail(ax.response?.data?.detail)
-      const suffix = detail ? ` ${detail}` : ax.response?.status === 429 ? ' Rate limit — try tomorrow.' : ''
+      if (import.meta.env.DEV) {
+        const ax = axios.isAxiosError(e) ? e : null
+        console.warn('[RAG]', ax?.response?.status, ax?.message, ax?.response?.data)
+      }
+      const reason = describeRagError(e)
       setTurns(prev => [
         ...prev,
         {
           id,
           query: q,
-          answer: `Request failed.${suffix}`.trim(),
+          answer: `Could not get an answer: ${reason}`,
           sources: [],
           failed: true,
         },
