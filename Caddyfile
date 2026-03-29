@@ -1,5 +1,4 @@
-# Replace YOUR_DOMAIN with your actual domain, e.g. litlens.duckdns.org
-# Caddy will automatically get a free HTTPS certificate from Let's Encrypt.
-YOUR_DOMAIN {
+# Caddy automatically gets a free HTTPS certificate from Let's Encrypt for litlens.tech
+litlens.tech {
     reverse_proxy backend:8000
 }
