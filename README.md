@@ -198,18 +198,9 @@ PRs must pass lint + tests before merge.
 
 ---
 
-## Hackathon demo checklist
-
-- **Live path:** open the Vercel URL → register a fresh account **or** use `qatest2@test.com` for pre-seeded blind-spot demo data → **Add paper** → graph → **Blind Spots** (citation vs conceptual tabs) → bottom **RAG** thread with a follow-up question → **Settings** invite if showing collaboration.
-- **Backup:** 60-second screen recording if Wi‑Fi or API quota fails; mention `GET /health` on the API host for “stack is up.”
-- **Honest limitation (post-hackathon):** several routes take `workspace_id` from the client but do not yet assert **workspace membership** on every read (graph/gaps/ingest). Fine for a trusted demo; tighten before a public multi-tenant launch.
-- **Secrets:** production `JWT_SECRET`, `GEMINI_API_KEY`, and DB URLs belong in env/SSM — never commit `.env`.
-
----
-
 ## Team
 
-Built at **HackUSF 2026** by two engineers over 7 sprints.
+Built at **HackUSF 2026** by two engineers in an Agile-scrum over 7 sprints.
 
 - **E1** — Frontend, core algorithms, RAG/AI layer
 - **E2** — AWS infrastructure, backend API, CI/CD
