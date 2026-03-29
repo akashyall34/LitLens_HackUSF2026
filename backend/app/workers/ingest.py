@@ -4,12 +4,15 @@ import uuid
 from arq.connections import RedisSettings
 
 from app.clients.paper_lookup import fetch_paper_metadata
+from app.clients.semantic_scholar import fetch_semantic_scholar_metadata
 from app.workers.gaps import detect_gaps
 from app.utils.embeddings import embed_texts
 from app.db import SessionLocal
-from app.models import Paper, PaperEmbedding, WorkspacePaper
+from app.models import Citation, Paper, PaperEmbedding, WorkspacePaper
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+# Cap outbound S2 + embedding calls per ingest (references list can be huge).
+MAX_REFERENCE_CITATIONS = 25
 
 
 def _normalize_doi(raw: str | None) -> str | None:
@@ -99,6 +102,79 @@ async def ingest_paper(ctx, url, workspace_id):
         )
         if not already:
             db.add(WorkspacePaper(workspace_id=ws_id, paper_id=paper.id))
+
+        # Citation gaps + graph edges: persist references as citations (cited paper may be outside workspace).
+        ref_ids = (paper_metadata.get("references") or [])[:MAX_REFERENCE_CITATIONS]
+        for ref_s2_id in ref_ids:
+            if not ref_s2_id:
+                continue
+            ref_s2_id = str(ref_s2_id).strip()
+            try:
+                ref_meta = fetch_semantic_scholar_metadata(ref_s2_id, include_references=False)
+            except Exception:
+                continue
+
+            ref_doi = _normalize_doi(ref_meta.get("doi"))
+            ref_sem = (ref_meta.get("semantic_id") or ref_s2_id).strip() or None
+
+            cited = None
+            if ref_doi:
+                cited = db.query(Paper).filter(Paper.doi == ref_doi).first()
+            if cited is None and ref_sem:
+                cited = db.query(Paper).filter(Paper.semantic_scholar_id == ref_sem).first()
+
+            if cited is None:
+                title = ref_meta.get("title")
+                if not title:
+                    continue
+                cited = Paper(
+                    title=title,
+                    abstract=ref_meta.get("abstract"),
+                    year=ref_meta.get("year"),
+                    doi=ref_doi,
+                    semantic_scholar_id=ref_sem,
+                    source_url=ref_meta.get("url"),
+                    citation_count=ref_meta.get("citation_count", 0),
+                    venue=ref_meta.get("venue"),
+                    authors=ref_meta.get("authors", []),
+                )
+                db.add(cited)
+                db.flush()
+
+            dup = (
+                db.query(Citation)
+                .filter(
+                    Citation.citing_paper_id == paper.id,
+                    Citation.cited_paper_id == cited.id,
+                )
+                .first()
+            )
+            if dup is None:
+                db.add(
+                    Citation(
+                        citing_paper_id=paper.id,
+                        cited_paper_id=cited.id,
+                    )
+                )
+
+            emb_exists = (
+                db.query(PaperEmbedding)
+                .filter(PaperEmbedding.paper_id == cited.id, PaperEmbedding.chunk_index == 0)
+                .first()
+            )
+            if emb_exists is None:
+                ref_text = f"{cited.title}. {cited.abstract or ''}"
+                try:
+                    ref_vecs = embed_texts([ref_text])
+                    db.add(
+                        PaperEmbedding(
+                            paper_id=cited.id,
+                            chunk_index=0,
+                            embedding=ref_vecs[0],
+                        )
+                    )
+                except Exception:
+                    pass
 
         db.commit()
         paper_id = str(paper.id)
