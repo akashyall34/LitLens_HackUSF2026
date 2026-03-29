@@ -36,6 +36,7 @@ export default function BlindSpotPanel({
   const [scanning, setScanning] = useState(false)
   const [scanMessage, setScanMessage] = useState<string | null>(null)
   const [addingPaperId, setAddingPaperId] = useState<string | null>(null)
+  const [citationRefreshing, setCitationRefreshing] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchGaps = useCallback(async () => {
@@ -69,6 +70,18 @@ export default function BlindSpotPanel({
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
+
+  const refreshCitationGaps = async () => {
+    setError(null)
+    setCitationRefreshing(true)
+    try {
+      await fetchGaps()
+    } catch {
+      setError('Could not refresh citation gaps.')
+    } finally {
+      setCitationRefreshing(false)
+    }
+  }
 
   const runConceptualScan = async () => {
     setScanMessage(null)
@@ -141,7 +154,11 @@ export default function BlindSpotPanel({
               <button
                 key={tab}
                 type="button"
-                onClick={() => setActiveTab(i)}
+                onClick={() => {
+                  setActiveTab(i)
+                  setError(null)
+                  if (i === 0) setScanMessage(null)
+                }}
                 className={`flex-1 py-2 text-sm font-medium transition-colors ${
                   activeTab === i
                     ? 'text-teal-400 border-b-2 border-teal-400'
@@ -154,20 +171,40 @@ export default function BlindSpotPanel({
           </div>
 
           <div className="px-4 py-2 border-b border-slate-700 space-y-2">
-            <button
-              type="button"
-              disabled={scanning}
-              onClick={runConceptualScan}
-              className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs py-2 rounded-lg font-medium"
-            >
-              {scanning ? 'Running AI conceptual scan…' : 'Run AI conceptual gap scan'}
-            </button>
-            <p className="text-slate-500 text-[10px] leading-snug">
-              Citation gaps load from shared references. Conceptual scan uses Gemini; small workspaces use a
-              single gap cluster when 1–2 cited papers have embeddings. Re-running the scan will not wipe prior
-              conceptual results if the new run finds nothing.
-            </p>
-            {scanMessage && <p className="text-teal-400 text-xs">{scanMessage}</p>}
+            {activeTab === 0 ? (
+              <>
+                <button
+                  type="button"
+                  disabled={citationRefreshing || loading}
+                  onClick={refreshCitationGaps}
+                  className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs py-2 rounded-lg font-medium"
+                >
+                  {citationRefreshing ? 'Refreshing…' : 'Refresh citation gaps'}
+                </button>
+                <p className="text-slate-500 text-[10px] leading-snug">
+                  Citation gaps are derived from the citations already in your workspace (usually after ingest
+                  pulls references). They show when two or more workspace papers cite the same paper that is{' '}
+                  <strong>not</strong> in the workspace. Use refresh after adding papers—no AI on this tab.
+                </p>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={scanning}
+                  onClick={runConceptualScan}
+                  className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs py-2 rounded-lg font-medium"
+                >
+                  {scanning ? 'Running AI conceptual scan…' : 'Run AI conceptual gap scan'}
+                </button>
+                <p className="text-slate-500 text-[10px] leading-snug">
+                  Conceptual gaps use Gemini on your workspace embeddings. Small workspaces may show a single
+                  cluster when only one or two cited papers have embeddings. Re-running will not wipe prior
+                  results if the new run finds nothing.
+                </p>
+                {scanMessage && <p className="text-teal-400 text-xs">{scanMessage}</p>}
+              </>
+            )}
             {error && <p className="text-red-400 text-xs">{error}</p>}
           </div>
 
