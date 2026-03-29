@@ -92,6 +92,8 @@ cd frontend && npm install && npm run dev
 
 Open **http://localhost:5173** — register an account and paste a paper URL or DOI to get started.
 
+**Per-user workspaces:** new accounts get their own workspace; collaborators join via **Settings → invite email** (join link). QA blind-spot seed data loads for `qatest2@test.com` only.
+
 ---
 
 ## Project Structure
@@ -140,16 +142,18 @@ LitLens_HackUSF2026/
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/auth/register` | Create account |
-| `POST` | `/auth/login` | Get JWT tokens |
+| `POST` | `/auth/register` | Create account (returns `workspace_id`) |
+| `POST` | `/auth/login` | Get JWT tokens + `workspace_id` |
+| `GET` | `/auth/me` | Current user + primary `workspace_id` |
 | `POST` | `/auth/refresh` | Rotate refresh token |
+| `POST` | `/workspaces/join` | Redeem invite token (body: `{ token }`) |
 | `POST` | `/ingest/url` | Queue paper ingestion by URL |
 | `POST` | `/ingest/doi` | Queue paper ingestion by DOI |
 | `GET` | `/ingest/status/{job_id}` | Poll ingestion job |
 | `GET` | `/graph/{workspace_id}` | Get citation graph nodes + edges |
 | `GET` | `/gaps/{workspace_id}` | Get citation + semantic blind spots |
 | `POST` | `/gaps/{workspace_id}/detect` | Trigger async gap detection |
-| `POST` | `/rag/query` | Ask a question about workspace papers |
+| `POST` | `/rag/query` | RAG over workspace (`query`, `workspace_id`, optional `history[]`) |
 | `POST` | `/edges/classify` | Classify edge relationships via Gemini |
 | `POST` | `/workspaces/{id}/invite` | Send collaborator invite email |
 | `WS` | `/ws/{workspace_id}?token=` | Real-time Yjs collaboration |
@@ -189,6 +193,15 @@ PRs must pass lint + tests before merge.
 2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Commit your changes
 4. Push and open a PR — the CI pipeline runs automatically
+
+---
+
+## Hackathon demo checklist
+
+- **Live path:** open the Vercel URL → register a fresh account **or** use `qatest2@test.com` for pre-seeded blind-spot demo data → **Add paper** → graph → **Blind Spots** (citation vs conceptual tabs) → bottom **RAG** thread with a follow-up question → **Settings** invite if showing collaboration.
+- **Backup:** 60-second screen recording if Wi‑Fi or API quota fails; mention `GET /health` on the API host for “stack is up.”
+- **Honest limitation (post-hackathon):** several routes take `workspace_id` from the client but do not yet assert **workspace membership** on every read (graph/gaps/ingest). Fine for a trusted demo; tighten before a public multi-tenant launch.
+- **Secrets:** production `JWT_SECRET`, `GEMINI_API_KEY`, and DB URLs belong in env/SSM — never commit `.env`.
 
 ---
 
