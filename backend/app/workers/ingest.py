@@ -178,6 +178,10 @@ async def ingest_paper(ctx, url, workspace_id):
 
         db.commit()
         paper_id = str(paper.id)
+        try:
+            await redis.delete(f"gaps:{workspace_id}:citation")
+        except Exception:
+            pass
 
     except Exception:
         db.rollback()
