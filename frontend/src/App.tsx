@@ -62,7 +62,11 @@ function App() {
 
   const loadGraph = useCallback(() => {
     if (!user || !workspaceId) return
-    connectWorkspace(workspaceId)
+    try {
+      connectWorkspace(workspaceId)
+    } catch (e) {
+      console.warn('[Graph] workspace realtime connection failed', e)
+    }
     api
       .get(`/graph/${workspaceId}`)
       .then(res => res.data)
@@ -101,6 +105,9 @@ function App() {
           }),
         )
       })
+      .catch(e => {
+        console.warn('[Graph] initial load failed', e)
+      })
   }, [user, workspaceId, _setNodes, _setEdges])
 
   useEffect(() => {
@@ -125,7 +132,7 @@ function App() {
   }, [])
 
   if (!user) return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-300 text-sm">Loading sign-in…</div>}>
       <AuthPage onAuth={setUser} />
     </Suspense>
   )
@@ -156,7 +163,7 @@ function App() {
   }
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-300 text-sm">Loading workspace…</div>}>
       <div className="relative h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,rgba(34,211,238,0.2),transparent_33%),radial-gradient(circle_at_85%_0%,rgba(56,189,248,0.16),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.94)_0%,rgba(2,6,23,1)_65%)]" />
 

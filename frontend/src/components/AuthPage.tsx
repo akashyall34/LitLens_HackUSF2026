@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import axios from 'axios'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -8,6 +8,23 @@ export default function AuthPage({ onAuth }) {
   const [form, setForm] = useState({ email: '', password: '', full_name: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(8)
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingProgress(8)
+      return
+    }
+    const timer = window.setInterval(() => {
+      setLoadingProgress(prev => {
+        if (prev >= 90) return prev
+        if (prev < 50) return prev + 10
+        if (prev < 75) return prev + 5
+        return prev + 2
+      })
+    }, 120)
+    return () => window.clearInterval(timer)
+  }, [loading])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -89,6 +106,18 @@ export default function AuthPage({ onAuth }) {
           >
             {loading ? '...' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
+
+          {loading && (
+            <div className="mx-auto w-full max-w-xs space-y-1">
+              <div className="h-1.5 w-full overflow-hidden rounded-full border border-white/10 bg-slate-800/90">
+                <div
+                  className="h-full rounded-full bg-cyan-300 transition-[width] duration-150"
+                  style={{ width: `${loadingProgress}%` }}
+                />
+              </div>
+              <p className="text-center text-[10px] text-slate-400">Signing you in…</p>
+            </div>
+          )}
         </form>
 
         <p className="text-center text-xs text-slate-400">
