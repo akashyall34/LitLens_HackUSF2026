@@ -5,7 +5,6 @@
 Paste a DOI or URL → LitLens ingests the paper, maps its citation network, clusters topics with K-means, and surfaces blind spots your literature review is missing — all in your browser.
 
 > 🚀 **Live app:** https://litlens-research.vercel.app  
-> 🔧 **API:** https://litlens.tech
 
 ---
 
