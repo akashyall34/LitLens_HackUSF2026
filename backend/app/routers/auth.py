@@ -15,6 +15,7 @@ from app.auth.utils import (
     verify_password,
 )
 from app.db import SessionLocal
+from app.demo_workspace import ensure_demo_workspace_for_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -81,6 +82,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
             "password_hash": hash_password(body.password),
         },
     )
+    ensure_demo_workspace_for_user(db, user_id)
     db.commit()
 
     return {
@@ -104,6 +106,8 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+
+    ensure_demo_workspace_for_user(db, row.id)
 
     return {
         "access_token": create_access_token(row.id),
@@ -141,6 +145,7 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
         text("DELETE FROM refresh_tokens WHERE token_hash = :hash"),
         {"hash": token_hash},
     )
+    ensure_demo_workspace_for_user(db, row.user_id)
     return {
         "access_token": create_access_token(row.user_id),
         "refresh_token": _issue_refresh_token(row.user_id, db),
