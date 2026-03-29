@@ -13,8 +13,6 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.demo_workspace import DEMO_WORKSPACE_ID
-
 logger = logging.getLogger(__name__)
 
 QA_ACCOUNT_EMAIL = "qatest2@test.com"
@@ -74,9 +72,9 @@ def _semantic_cache_payload() -> str:
     return json.dumps(gaps)
 
 
-def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
+def seed_qa_blindspots_data(db: Session, user_id: str, workspace_id: str) -> None:
     """Insert papers, workspace links, and shared citation gap. Does not commit."""
-    wid = DEMO_WORKSPACE_ID
+    wid = workspace_id
     authors_a = json.dumps(["M. Kapoor", "L. Chen"])
     authors_b = json.dumps(["J. Okonkwo"])
     authors_gap = json.dumps(
@@ -233,14 +231,13 @@ def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
             )
 
 
-def touch_qa_blindspots_redis() -> None:
+def touch_qa_blindspots_redis(workspace_id: str) -> None:
     """Drop citation cache (rebuilt from DB) and set semantic gaps for the panel."""
     url = os.getenv("REDIS_URL", "redis://localhost:6379")
     try:
         r = Redis.from_url(url, decode_responses=True)
-        wid = DEMO_WORKSPACE_ID
-        r.delete(f"gaps:{wid}:citation")
-        r.setex(f"gaps:{wid}:semantic", 86400, _semantic_cache_payload())
+        r.delete(f"gaps:{workspace_id}:citation")
+        r.setex(f"gaps:{workspace_id}:semantic", 86400, _semantic_cache_payload())
     except Exception:
         logger.exception("touch_qa_blindspots_redis failed (non-fatal)")
 

@@ -2,15 +2,14 @@ import { useState } from 'react'
 import { api } from '../lib/auth'
 import { waitIngestDone } from '../lib/waitIngestDone'
 
-const WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'
-
 type Props = {
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  workspaceId: string
 }
 
-export default function IngestPaperBar({ open, onClose, onSuccess }: Props) {
+export default function IngestPaperBar({ open, onClose, onSuccess, workspaceId }: Props) {
   const [url, setUrl] = useState('')
   const [doi, setDoi] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,7 +30,7 @@ export default function IngestPaperBar({ open, onClose, onSuccess }: Props) {
     try {
       const { data } = await api.post<{ job_id: string }>('/ingest/url', {
         url: u,
-        workspace_id: WORKSPACE_ID,
+        workspace_id: workspaceId,
       })
       setMsg('Ingest started…')
       const out = await waitIngestDone(data.job_id)
@@ -60,7 +59,7 @@ export default function IngestPaperBar({ open, onClose, onSuccess }: Props) {
     try {
       const { data } = await api.post<{ job_id: string }>('/ingest/doi', {
         doi: d,
-        workspace_id: WORKSPACE_ID,
+        workspace_id: workspaceId,
       })
       setMsg('Ingest started…')
       const out = await waitIngestDone(data.job_id)
@@ -87,7 +86,7 @@ export default function IngestPaperBar({ open, onClose, onSuccess }: Props) {
         </button>
       </div>
       <p className="text-slate-500 text-[10px] leading-snug">
-        Same workspace for everyone in this demo. Papers are queued to the ingest worker (Semantic Scholar +
+        Papers are queued to the ingest worker (Semantic Scholar +
         embeddings).
       </p>
       <div className="space-y-1">

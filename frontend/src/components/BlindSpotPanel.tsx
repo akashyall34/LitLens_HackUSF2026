@@ -6,8 +6,6 @@ import { waitIngestDone } from '../lib/waitIngestDone'
 
 const tabs = ['Citation Gaps', 'Conceptual Gaps']
 
-const WORKSPACE_ID = '00000000-0000-0000-0000-000000000001'
-
 type GapsState = {
   citation_gaps: any[]
   semantic_gaps: any[]
@@ -17,11 +15,17 @@ type GapsState = {
 type Props = {
   open: boolean
   onClose: () => void
+  workspaceId: string
   /** Refetch graph after a gap paper is ingested into the workspace */
   onWorkspacePapersChanged?: () => void
 }
 
-export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged }: Props) {
+export default function BlindSpotPanel({
+  open,
+  onClose,
+  workspaceId,
+  onWorkspacePapersChanged,
+}: Props) {
   const [activeTab, setActiveTab] = useState(0)
   const [gaps, setGaps] = useState<GapsState>({
     citation_gaps: [],
@@ -35,13 +39,13 @@ export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchGaps = useCallback(async () => {
-    const { data } = await api.get<GapsState>(`/gaps/${WORKSPACE_ID}`)
+    const { data } = await api.get<GapsState>(`/gaps/${workspaceId}`)
     setGaps({
       citation_gaps: data.citation_gaps || [],
       semantic_gaps: data.semantic_gaps || [],
       team_coverage: data.team_coverage,
     })
-  }, [])
+  }, [workspaceId])
 
   useEffect(() => {
     if (!open) return
@@ -75,7 +79,7 @@ export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged
       pollRef.current = null
     }
     try {
-      const { data } = await api.post<{ job_id: string }>(`/gaps/${WORKSPACE_ID}/detect`)
+      const { data } = await api.post<{ job_id: string }>(`/gaps/${workspaceId}/detect`)
       const jobId = data.job_id
       pollRef.current = setInterval(async () => {
         try {
@@ -84,7 +88,7 @@ export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged
             if (pollRef.current) clearInterval(pollRef.current)
             pollRef.current = null
             setScanning(false)
-            const fresh = await api.get<GapsState>(`/gaps/${WORKSPACE_ID}`)
+            const fresh = await api.get<GapsState>(`/gaps/${workspaceId}`)
             const sem = fresh.data.semantic_gaps || []
             setGaps({
               citation_gaps: fresh.data.citation_gaps || [],
@@ -220,7 +224,7 @@ export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged
                       try {
                         const { data } = await api.post<{ job_id: string }>('/ingest/url', {
                           url: u,
-                          workspace_id: WORKSPACE_ID,
+                          workspace_id: workspaceId,
                         })
                         const out = await waitIngestDone(data.job_id)
                         if (out === 'done') {

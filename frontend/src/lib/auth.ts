@@ -22,6 +22,18 @@ api.interceptors.response.use(
         const { data } = await axios.post(`${API}/auth/refresh`, { refresh_token })
         localStorage.setItem('access_token', data.access_token)
         localStorage.setItem('refresh_token', data.refresh_token)
+        if (data.user) {
+          let prev: Record<string, unknown> | null = null
+          try {
+            prev = JSON.parse(localStorage.getItem('user') || 'null')
+          } catch {
+            prev = null
+          }
+          localStorage.setItem(
+            'user',
+            JSON.stringify({ ...(prev && typeof prev === 'object' ? prev : {}), ...data.user }),
+          )
+        }
         err.config.headers.Authorization = `Bearer ${data.access_token}`
         return api(err.config)
       } catch {

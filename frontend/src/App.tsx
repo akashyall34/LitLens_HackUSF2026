@@ -20,8 +20,6 @@ const nodeTypes = {
   blindSpotNode: BlindSpotNode,
 }
 
-const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
-
 function App() {
   const [selectedPaper, setSelectedPaper] = useState(null as any)
   const [nodes, _setNodes, onNodesChange] = useNodesState([])
@@ -29,15 +27,39 @@ function App() {
   const [blindSpotOpen, setBlindSpotOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [user, setUser] = useState(getUser())
+  const [workspaceRecoveryErr, setWorkspaceRecoveryErr] = useState(false)
   const [activeEdge, setActiveEdge] = useState(null as any)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
   const [ingestOpen, setIngestOpen] = useState(false)
 
-  const loadGraph = useCallback(() => {
-    if (!user) return
-    connectWorkspace(WORKSPACE_ID)
+  const workspaceId = user?.workspace_id ?? null
+
+  // Refresh workspace_id from server (fixes stale localStorage and legacy demo membership).
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    setWorkspaceRecoveryErr(false)
     api
-      .get(`/graph/${WORKSPACE_ID}`)
+      .get<{ user: { id: string; email: string; workspace_id: string } }>('/auth/me')
+      .then(({ data }) => {
+        if (cancelled) return
+        const merged = { ...user, ...data.user }
+        localStorage.setItem('user', JSON.stringify(merged))
+        setUser(merged)
+      })
+      .catch(() => {
+        if (!cancelled && !user.workspace_id) setWorkspaceRecoveryErr(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  const loadGraph = useCallback(() => {
+    if (!user || !workspaceId) return
+    connectWorkspace(workspaceId)
+    api
+      .get(`/graph/${workspaceId}`)
       .then(res => res.data)
       .then(data => {
         _setNodes(
@@ -74,11 +96,7 @@ function App() {
           }),
         )
       })
-  }, [
-    user,
-    _setNodes,
-    _setEdges,
-  ])
+  }, [user, workspaceId, _setNodes, _setEdges])
 
   useEffect(() => {
     loadGraph()
@@ -106,6 +124,28 @@ function App() {
       <AuthPage onAuth={setUser} />
     </Suspense>
   )
+
+  if (!user.workspace_id) {
+    if (workspaceRecoveryErr) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-slate-300 text-sm px-6 text-center">
+          <p>Could not load your workspace. Try signing out and signing in again.</p>
+          <button
+            type="button"
+            onClick={logout}
+            className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg"
+          >
+            Sign out
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm">
+        Loading workspace…
+      </div>
+    )
+  }
 
   return (
     <Suspense fallback={null}>
@@ -157,23 +197,26 @@ function App() {
         <PaperDetailPanel
           paper={selectedPaper}
           onClose={() => setSelectedPaper(null)}
-          workspaceId={WORKSPACE_ID}
+          workspaceId={workspaceId!}
           onRemovedFromWorkspace={loadGraph}
         />
         <BlindSpotPanel
           open={blindSpotOpen}
           onClose={() => setBlindSpotOpen(false)}
           onWorkspacePapersChanged={loadGraph}
+          workspaceId={workspaceId!}
         />
         <IngestPaperBar
           open={ingestOpen}
           onClose={() => setIngestOpen(false)}
           onSuccess={loadGraph}
+          workspaceId={workspaceId!}
         />
-        <RAGQueryBox />
+        <RAGQueryBox workspaceId={workspaceId!} />
         <WorkspaceSettings
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
+          workspaceId={workspaceId!}
         />
         {activeEdge && (
           <div style={{ position: 'fixed', top: menuPos.y, left: menuPos.x }}>

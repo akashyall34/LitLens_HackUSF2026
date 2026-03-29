@@ -14,7 +14,12 @@ export default function JoinWorkspace() {
     attempted.current = true
     ;(async () => {
       try {
-        await api.post('/workspaces/join', { token })
+        const { data } = await api.post<{ workspace_id: string }>('/workspaces/join', { token })
+        const prev = getUser()
+        localStorage.setItem(
+          'user',
+          JSON.stringify({ ...(prev || {}), workspace_id: data.workspace_id }),
+        )
         setStatus('ok')
         setMessage('You have joined the workspace. Redirecting…')
         window.setTimeout(() => {

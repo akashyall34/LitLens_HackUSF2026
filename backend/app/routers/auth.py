@@ -14,23 +14,15 @@ from app.auth.utils import (
     hash_token,
     verify_password,
 )
-from app.db import SessionLocal
-from app.demo_workspace import ensure_demo_workspace_for_user
+from app.dependencies import get_current_user, get_db
 from app.seed_qa_blindspots import (
     seed_qa_blindspots_data,
     should_seed_qa_blindspots,
     touch_qa_blindspots_redis,
 )
+from app.user_workspace import create_personal_workspace, ensure_user_has_workspace
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 class RegisterRequest(BaseModel):
@@ -63,6 +55,23 @@ def _issue_refresh_token(user_id: str, db: Session) -> str:
     return token
 
 
+@router.get("/me")
+def auth_me(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return current user and primary workspace (creates a personal workspace if needed)."""
+    wid = ensure_user_has_workspace(db, current_user["id"])
+    db.commit()
+    return {
+        "user": {
+            "id": current_user["id"],
+            "email": current_user["email"],
+            "workspace_id": wid,
+        },
+    }
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
@@ -87,18 +96,18 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
             "password_hash": hash_password(body.password),
         },
     )
-    ensure_demo_workspace_for_user(db, user_id)
+    wid = create_personal_workspace(db, user_id)
     if should_seed_qa_blindspots(email):
-        seed_qa_blindspots_data(db, user_id)
-    db.commit()
+        seed_qa_blindspots_data(db, user_id, wid)
+    refresh_plain = _issue_refresh_token(user_id, db)
     if should_seed_qa_blindspots(email):
-        touch_qa_blindspots_redis()
+        touch_qa_blindspots_redis(wid)
 
     return {
         "access_token": create_access_token(user_id),
-        "refresh_token": _issue_refresh_token(user_id, db),
+        "refresh_token": refresh_plain,
         "token_type": "bearer",
-        "user": {"id": user_id, "email": email},
+        "user": {"id": user_id, "email": email, "workspace_id": wid},
     }
 
 
@@ -116,19 +125,19 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
 
-    ensure_demo_workspace_for_user(db, row.id)
+    wid = ensure_user_has_workspace(db, row.id)
     if should_seed_qa_blindspots(row.email):
-        seed_qa_blindspots_data(db, row.id)
+        seed_qa_blindspots_data(db, row.id, wid)
 
     refresh_plain = _issue_refresh_token(row.id, db)
     if should_seed_qa_blindspots(row.email):
-        touch_qa_blindspots_redis()
+        touch_qa_blindspots_redis(wid)
 
     return {
         "access_token": create_access_token(row.id),
         "refresh_token": refresh_plain,
         "token_type": "bearer",
-        "user": {"id": row.id, "email": row.email},
+        "user": {"id": row.id, "email": row.email, "workspace_id": wid},
     }
 
 
@@ -161,21 +170,21 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
     ).fetchone()
     user_email = user_row[0] if user_row else ""
 
-    # Rotate: delete old token, issue new pair
     db.execute(
         text("DELETE FROM refresh_tokens WHERE token_hash = :hash"),
         {"hash": token_hash},
     )
-    ensure_demo_workspace_for_user(db, row.user_id)
+    wid = ensure_user_has_workspace(db, row.user_id)
     if should_seed_qa_blindspots(user_email):
-        seed_qa_blindspots_data(db, row.user_id)
+        seed_qa_blindspots_data(db, row.user_id, wid)
 
     refresh_plain = _issue_refresh_token(row.user_id, db)
     if should_seed_qa_blindspots(user_email):
-        touch_qa_blindspots_redis()
+        touch_qa_blindspots_redis(wid)
 
     return {
         "access_token": create_access_token(row.user_id),
         "refresh_token": refresh_plain,
         "token_type": "bearer",
+        "user": {"id": row.user_id, "email": user_email, "workspace_id": wid},
     }

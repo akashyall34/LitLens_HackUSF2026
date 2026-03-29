@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/auth'
 
-const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
-
-export default function RAGQueryBox() {
+export default function RAGQueryBox({ workspaceId }: { workspaceId: string }) {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null as any)
@@ -17,7 +15,7 @@ export default function RAGQueryBox() {
     setResult(null)
 
     try {
-      const { data } = await api.post('/rag/query', { query, workspace_id: WORKSPACE_ID })
+      const { data } = await api.post('/rag/query', { query, workspace_id: workspaceId })
       setResult(data)
     } catch {
       setResult({ answer: 'Request failed. Please try again.', sources: [] })

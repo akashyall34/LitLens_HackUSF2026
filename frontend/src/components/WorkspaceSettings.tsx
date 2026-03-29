@@ -3,11 +3,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { api, getUser } from '../lib/auth'
 
-const WORKSPACE_ID = "00000000-0000-0000-0000-000000000001"
-
 type MemberRow = { user_id: string; email: string; role: string }
 
-export default function WorkspaceSettings({ open, onClose }) {
+export default function WorkspaceSettings({
+  open,
+  onClose,
+  workspaceId,
+}: {
+  open: boolean
+  onClose: () => void
+  workspaceId: string
+}) {
   const [email, setEmail] = useState('')
   const [inviteStatus, setInviteStatus] = useState(null as any)
   const [loading, setLoading] = useState(false)
@@ -19,10 +25,10 @@ export default function WorkspaceSettings({ open, onClose }) {
     if (!open) return
     setTeamErr(null)
     api
-      .get<{ owner_id: string; members: MemberRow[] }>(`/workspaces/${WORKSPACE_ID}/members`)
+      .get<{ owner_id: string; members: MemberRow[] }>(`/workspaces/${workspaceId}/members`)
       .then(({ data }) => setTeam(data))
       .catch(() => setTeamErr('Could not load members.'))
-  }, [open])
+  }, [open, workspaceId])
 
   const handleInvite = async (e) => {
     e.preventDefault()
@@ -31,7 +37,7 @@ export default function WorkspaceSettings({ open, onClose }) {
     setInviteStatus(null)
 
     try {
-      const { data } = await api.post(`/workspaces/${WORKSPACE_ID}/invite`, { email })
+      const { data } = await api.post(`/workspaces/${workspaceId}/invite`, { email })
       setInviteStatus({
         success: true,
         join_url: data.join_url,
@@ -53,9 +59,9 @@ export default function WorkspaceSettings({ open, onClose }) {
     setRemovingId(userId)
     setTeamErr(null)
     try {
-      await api.delete(`/workspaces/${WORKSPACE_ID}/members/${userId}`)
+      await api.delete(`/workspaces/${workspaceId}/members/${userId}`)
       const { data } = await api.get<{ owner_id: string; members: MemberRow[] }>(
-        `/workspaces/${WORKSPACE_ID}/members`,
+        `/workspaces/${workspaceId}/members`,
       )
       setTeam(data)
     } catch (err: unknown) {
@@ -122,8 +128,7 @@ export default function WorkspaceSettings({ open, onClose }) {
               )}
               {!iAmOwner && team && (
                 <p className="text-slate-500 text-[10px] mb-3">
-                  Only the workspace owner can remove people. Owner is whoever created this demo workspace
-                  first.
+                  Only the workspace owner can remove members.
                 </p>
               )}
             </div>
