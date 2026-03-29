@@ -13,7 +13,25 @@ type GapsState = {
   team_coverage?: { member_email: string; papers_added: number }[]
 }
 
-export default function BlindSpotPanel({ open, onClose }) {
+async function waitIngestDone(jobId: string): Promise<'done' | 'failed' | 'timeout'> {
+  for (let i = 0; i < 90; i++) {
+    const { data } = await api.get<{ status: string }>(`/ingest/status/${jobId}`)
+    const s = String(data.status ?? '')
+    if (s === 'done') return 'done'
+    if (s === 'failed') return 'failed'
+    await new Promise(r => setTimeout(r, 2000))
+  }
+  return 'timeout'
+}
+
+type Props = {
+  open: boolean
+  onClose: () => void
+  /** Refetch graph after a gap paper is ingested into the workspace */
+  onWorkspacePapersChanged?: () => void
+}
+
+export default function BlindSpotPanel({ open, onClose, onWorkspacePapersChanged }: Props) {
   const [activeTab, setActiveTab] = useState(0)
   const [gaps, setGaps] = useState<GapsState>({
     citation_gaps: [],
@@ -23,6 +41,7 @@ export default function BlindSpotPanel({ open, onClose }) {
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanMessage, setScanMessage] = useState<string | null>(null)
+  const [addingPaperId, setAddingPaperId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchGaps = useCallback(async () => {
@@ -75,8 +94,18 @@ export default function BlindSpotPanel({ open, onClose }) {
             if (pollRef.current) clearInterval(pollRef.current)
             pollRef.current = null
             setScanning(false)
-            setScanMessage('Analysis complete.')
-            await fetchGaps()
+            const fresh = await api.get<GapsState>(`/gaps/${WORKSPACE_ID}`)
+            const sem = fresh.data.semantic_gaps || []
+            setGaps({
+              citation_gaps: fresh.data.citation_gaps || [],
+              semantic_gaps: sem,
+              team_coverage: fresh.data.team_coverage,
+            })
+            setScanMessage(
+              sem.length > 0
+                ? 'Analysis complete.'
+                : 'Analysis complete. No new conceptual clusters (previous results kept if available).',
+            )
           } else if (st.data.status === 'failed') {
             if (pollRef.current) clearInterval(pollRef.current)
             pollRef.current = null
@@ -140,8 +169,9 @@ export default function BlindSpotPanel({ open, onClose }) {
               {scanning ? 'Running AI conceptual scan…' : 'Run AI conceptual gap scan'}
             </button>
             <p className="text-slate-500 text-[10px] leading-snug">
-              Citation gaps load automatically. Conceptual gaps need this scan (worker + Gemini). Requires
-              several cited papers outside your workspace with embeddings.
+              Citation gaps load from shared references. Conceptual scan uses Gemini; small workspaces use a
+              single gap cluster when 1–2 cited papers have embeddings. Re-running the scan will not wipe prior
+              conceptual results if the new run finds nothing.
             </p>
             {scanMessage && <p className="text-teal-400 text-xs">{scanMessage}</p>}
             {error && <p className="text-red-400 text-xs">{error}</p>}
@@ -185,17 +215,49 @@ export default function BlindSpotPanel({ open, onClose }) {
                   {gap.why_matters && (
                     <p className="text-slate-300 text-xs leading-relaxed">{gap.why_matters}</p>
                   )}
-                  <button type="button" className="text-xs text-teal-400 hover:underline">
-                    Add to workspace →
+                  <button
+                    type="button"
+                    disabled={addingPaperId !== null}
+                    onClick={async () => {
+                      const u = gap.paper?.url as string | undefined
+                      const pid = gap.paper?.id as string | undefined
+                      if (!u) {
+                        setError('No ingest URL for this paper.')
+                        return
+                      }
+                      setError(null)
+                      setAddingPaperId(pid || u)
+                      try {
+                        const { data } = await api.post<{ job_id: string }>('/ingest/url', {
+                          url: u,
+                          workspace_id: WORKSPACE_ID,
+                        })
+                        const out = await waitIngestDone(data.job_id)
+                        if (out === 'done') {
+                          await fetchGaps()
+                          onWorkspacePapersChanged?.()
+                        } else if (out === 'failed') {
+                          setError('Add to workspace failed. Check worker logs.')
+                        } else {
+                          setError('Ingest still running — refresh in a moment.')
+                        }
+                      } catch {
+                        setError('Could not add paper to workspace.')
+                      } finally {
+                        setAddingPaperId(null)
+                      }
+                    }}
+                    className="text-xs text-teal-400 hover:underline disabled:opacity-40"
+                  >
+                    {addingPaperId === (gap.paper?.id || gap.paper?.url) ? 'Adding…' : 'Add to workspace →'}
                   </button>
                 </div>
               ))}
 
             {activeTab === 1 && !loading && gaps.semantic_gaps.length === 0 && !scanning && (
               <p className="text-slate-400 text-xs leading-relaxed">
-                No conceptual gaps yet. Click <strong>Run AI conceptual gap scan</strong> above. The pipeline
-                needs enough cited (but not in workspace) papers with embeddings to form clusters; small
-                workspaces may return none until you add more related papers.
+                No conceptual gaps yet. Run the scan above, or add papers (URL/DOI from the graph toolbar) so
+                ingest can create citations and embeddings for cited work outside the workspace.
               </p>
             )}
 

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 
+import numpy as np
 from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -22,6 +23,22 @@ QA_ACCOUNT_EMAIL = "qatest2@test.com"
 QA_PAPER_IN_WS_A = "b1000001-0001-4001-8001-000000000001"
 QA_PAPER_IN_WS_B = "b1000002-0002-4002-8002-000000000002"
 QA_PAPER_GAP = "c2000001-0001-4001-8001-000000000099"
+
+# Must match `PaperEmbedding` / Gemini embedding size used in ingest.
+_EMB_DIM = 3072
+
+
+def _embedding_axis(axis: int) -> str:
+    v = np.zeros(_EMB_DIM, dtype=np.float64)
+    if axis == 1:
+        v[0] = 0.9
+        v[1] = 0.1
+    else:
+        v[min(axis, _EMB_DIM - 1)] = 1.0
+    n = np.linalg.norm(v)
+    if n > 0:
+        v /= n
+    return "[" + ",".join(f"{float(x):.8f}" for x in v.tolist()) + "]"
 
 
 def _semantic_cache_payload() -> str:
@@ -143,6 +160,29 @@ def seed_qa_blindspots_data(db: Session, user_id: str) -> None:
             """),
             {"wid": wid, "pid": pid, "uid": user_id},
         )
+
+    # Orthogonal-ish vectors so conceptual scan finds a low-coverage gap cluster (dim must match DB).
+    for pid, axis in (
+        (QA_PAPER_IN_WS_A, 0),
+        (QA_PAPER_IN_WS_B, 1),
+        (QA_PAPER_GAP, 200),
+    ):
+        emb_lit = _embedding_axis(axis)
+        try:
+            db.execute(
+                text("""
+                    INSERT INTO paper_embeddings (paper_id, chunk_index, embedding, created_at)
+                    VALUES (CAST(:pid AS UUID), 0, CAST(:emb AS vector), NOW())
+                    ON CONFLICT (paper_id, chunk_index) DO NOTHING
+                """),
+                {"pid": pid, "emb": emb_lit},
+            )
+        except Exception as ex:
+            logger.warning(
+                "QA seed: could not insert embedding for %s (vector dim may not match DB): %s",
+                pid,
+                ex,
+            )
 
 
 def touch_qa_blindspots_redis() -> None:

@@ -17,6 +17,7 @@ async def detect_gaps(ctx, workspace_id):
     await r.set(f"job:{job_id}:progress", 10)
 
     db = SessionLocal()
+    semantic_gaps = []
     try:
         semantic_gaps = detect_semantic_gaps(workspace_id, db)
         await r.set(f"job:{job_id}:progress", 80)
@@ -32,7 +33,22 @@ async def detect_gaps(ctx, workspace_id):
             }
             for g in semantic_gaps
         ])
-        await r.set(f"gaps:{workspace_id}:semantic", cache_payload, ex=3600)
+        key_sem = f"gaps:{workspace_id}:semantic"
+        if semantic_gaps:
+            await r.set(key_sem, cache_payload, ex=3600)
+        else:
+            prev_raw = await r.get(key_sem)
+            keep_prior = False
+            if prev_raw is not None:
+                raw = prev_raw.decode() if isinstance(prev_raw, (bytes, bytearray)) else prev_raw
+                try:
+                    prev_list = json.loads(raw)
+                    if isinstance(prev_list, list) and len(prev_list) > 0:
+                        keep_prior = True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if not keep_prior:
+                await r.set(key_sem, cache_payload, ex=3600)
 
         await r.set(f"job:{job_id}:progress", 100)
         await r.set(f"job:{job_id}:status", "done")

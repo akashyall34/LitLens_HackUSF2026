@@ -52,6 +52,12 @@ async def get_job_status(
 
     progress = await redis.get(f"job:{job_id}:progress") or "0"
     paper_id = await redis.get(f"job:{job_id}:paper_id")
+    if isinstance(status, bytes):
+        status = status.decode()
+    if isinstance(progress, bytes):
+        progress = progress.decode()
+    if isinstance(paper_id, bytes):
+        paper_id = paper_id.decode()
 
     return {
         "job_id": job_id,
