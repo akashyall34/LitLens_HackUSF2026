@@ -13,5 +13,5 @@ def test_main_app_import():
 
 
 def test_gaps_import():
-    from app.gaps.citation import compute_citation_gaps
-    assert callable(compute_citation_gaps)
+    from app.gaps.citation import detect_citation_gaps
+    assert callable(detect_citation_gaps)
