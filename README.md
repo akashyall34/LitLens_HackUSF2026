@@ -9,6 +9,11 @@ Paste a DOI or URL → LitLens ingests the paper, maps its citation network, clu
 
 ---
 
+## Development
+- CRDT (multi-user workspace) In Progress...
+
+---
+
 ## Media
 
 <img width="2558" height="1342" alt="image1" src="https://github.com/user-attachments/assets/211abfae-ac50-4146-b4a1-c18067895900" />
