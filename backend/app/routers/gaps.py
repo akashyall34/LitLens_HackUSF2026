@@ -45,22 +45,20 @@ async def get_gaps(
     cached_semantic = await redis.get(f"gaps:{workspace_id}:semantic")
 
     if cached_citation is not None:
-        return {
-            "citation_gaps": json.loads(cached_citation),
-            "semantic_gaps": json.loads(cached_semantic) if cached_semantic else [],
-        }
+        citation_gaps = json.loads(cached_citation)
+        semantic_gaps = json.loads(cached_semantic) if cached_semantic else []
+    else:
+        citation_gaps = detect_citation_gaps(workspace_id, db)
 
-    citation_gaps = detect_citation_gaps(workspace_id, db)
+        await redis.setex(
+            f"gaps:{workspace_id}:citation",
+            CACHE_TTL_SECONDS,
+            json.dumps(citation_gaps),
+        )
 
-    await redis.setex(
-        f"gaps:{workspace_id}:citation",
-        CACHE_TTL_SECONDS,
-        json.dumps(citation_gaps),
-    )
+        semantic_gaps = json.loads(cached_semantic) if cached_semantic else []
 
-    semantic_gaps = json.loads(cached_semantic) if cached_semantic else []
-
-    # ── US 5.9: Team coverage — papers per member ─────────────────────────
+    # ── US 5.9: Team coverage — papers per member (always fetched, not cached) ──
     team_rows = db.execute(
         text("""
             SELECT u.email, COUNT(wp.paper_id) AS paper_count

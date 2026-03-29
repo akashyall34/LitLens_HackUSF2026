@@ -113,8 +113,8 @@ def classify_workspace_edges(
                     UPDATE citations
                     SET edge_type  = :edge_type,
                         confidence = :confidence
-                    WHERE citing_paper_id = :citing_id::uuid
-                      AND cited_paper_id  = :cited_id::uuid
+                    WHERE citing_paper_id = CAST(:citing_id AS UUID)
+                      AND cited_paper_id  = CAST(:cited_id AS UUID)
                 """),
                 {
                     "edge_type": result.get("edge_type", "cites"),
