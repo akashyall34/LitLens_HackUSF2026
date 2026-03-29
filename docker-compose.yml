@@ -29,6 +29,18 @@ services:
       timeout: 3s
       retries: 10
 
+  backend:
+    build: ./backend
+    container_name: litlens-backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
