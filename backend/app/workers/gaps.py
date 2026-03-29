@@ -1,6 +1,4 @@
 import json
-import os
-import redis.asyncio as aioredis
 
 from app.db import SessionLocal
 from app.agents.tools.gap_tools import detect_semantic_gaps

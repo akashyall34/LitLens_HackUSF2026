@@ -3,7 +3,6 @@ import os
 import numpy as np
 from hdbscan import HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
-from sqlalchemy.orm import Session
 from google import genai
 
 from app.models import Paper, PaperEmbedding, WorkspacePaper, BlindSpot, Citation
@@ -128,7 +127,7 @@ def detect_semantic_gaps(workspace_id, db):
     for cluster_id, cov_score in coverage.items():
         if cov_score < 0.65:
             cluster_papers = [
-                gap_papers[i] for i, l in enumerate(labels) if l == cluster_id
+                gap_papers[i] for i, label in enumerate(labels) if label == cluster_id
             ]
             clusters.append({
                 "id": cluster_id,

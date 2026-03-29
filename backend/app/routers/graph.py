@@ -1,4 +1,3 @@
-import os
 from typing import Optional
 import uuid as uuid_lib
 

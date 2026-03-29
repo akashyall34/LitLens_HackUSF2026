@@ -1,5 +1,4 @@
 import uuid
-import redis.asyncio as aioredis
 
 from app.clients.paper_lookup import fetch_paper_metadata
 from app.utils.embeddings import embed_texts
@@ -53,7 +52,7 @@ async def ingest_paper(ctx, url, workspace_id):
         db.add(workspace_paper)
         db.commit()
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         await redis.set(f"job:{job_id}:status", "failed")
         raise

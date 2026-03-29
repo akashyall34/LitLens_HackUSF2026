@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, DateTime, Double, ForeignKey, Integer, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, Double, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.db import Base

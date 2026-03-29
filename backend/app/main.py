@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, Request
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.ingest import router as ingest_router
 from app.routers import auth as auth_router
@@ -62,7 +62,7 @@ app.include_router(workspaces_router.router)
 @app.websocket("/ws/{workspace_id}")
 async def ws_endpoint(websocket: WebSocket, workspace_id: str, token: str):
     await websocket_endpoint(websocket, workspace_id, token)
-    
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

@@ -1,9 +1,7 @@
-import os
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from app.agents.tools.rag_tools import answer_rag_query
 from app.dependencies import get_current_user
-import redis.asyncio as aioredis
 from app.redis_client import get_redis, check_rate_limit
 
 router = APIRouter(prefix="/rag", tags=["rag"], dependencies=[Depends(get_current_user)])
