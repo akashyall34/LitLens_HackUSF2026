@@ -18,7 +18,7 @@ aws ssm get-parameters-by-path \
   --output text \
   | awk '{gsub("/litlens/","",$1); print toupper($1)"="$2}' > .env
 
-echo "FRONTEND_ORIGIN=*" >> .env
+# FRONTEND_ORIGIN must be a real SPA URL in SSM (e.g. https://….vercel.app), not *.
 
 echo "=== Restarting stack ==="
 docker compose -f docker-compose.prod.yml up -d --build
