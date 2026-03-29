@@ -195,6 +195,62 @@ def _build_semantic_gaps_from_clusters(workspace_id, db, clusters, workspace_tit
     return semantic_gaps
 
 
+def _workspace_only_conceptual_gap(
+    workspace_id,
+    db,
+    workspace_embeddings: np.ndarray,
+    workspace_paper_ids: list,
+    workspace_titles: list,
+) -> list:
+    """
+    When every cited paper is already in the workspace (or there are no embeddings for
+    citation-gap candidates), there is nothing to cluster externally—but users still
+    expect conceptual feedback if they have multiple workspace papers.
+
+    Uses pairwise embedding similarity to emit one deterministic insight card.
+    """
+    if workspace_embeddings.shape[0] < 2:
+        return []
+
+    papers_db = sorted(
+        db.query(Paper).filter(Paper.id.in_(workspace_paper_ids)).all(),
+        key=lambda p: (p.year or 0),
+        reverse=True,
+    )
+    if len(papers_db) < 2:
+        return []
+
+    sim = cosine_similarity(workspace_embeddings)
+    np.fill_diagonal(sim, np.nan)
+    mean_sim = float(np.nanmean(sim))
+
+    if mean_sim < 0.55:
+        label = "Diverse research threads"
+        why_matters = (
+            "Your workspace papers sit in different semantic neighborhoods. "
+            "Citation gaps highlight outside works your papers agree on—use that tab to bridge themes."
+        )
+        coverage_score = 0.42
+    else:
+        label = "Cohesive literature set"
+        why_matters = (
+            "These works cluster closely in embedding space. "
+            "New angles usually come from highly cited work outside this bundle—re-check citation gaps after ingest, or add papers from references."
+        )
+        coverage_score = 0.48
+
+    gaps = [
+        {
+            "label": label,
+            "coverage_score": coverage_score,
+            "why_matters": why_matters,
+            "top_papers": papers_db[:2],
+        }
+    ]
+    store_blind_spots(workspace_id, gaps, db)
+    return gaps
+
+
 def store_blind_spots(workspace_id, semantic_gaps, db):
     wid = _workspace_uuid(workspace_id)
     db.query(BlindSpot).filter(
@@ -217,53 +273,78 @@ def store_blind_spots(workspace_id, semantic_gaps, db):
 
 def detect_semantic_gaps(workspace_id, db):
     workspace_embeddings = get_workspace_embeddings(workspace_id, db)
-    if workspace_embeddings.size == 0 or workspace_embeddings.shape[0] == 0:
-        logger.info("detect_semantic_gaps: no workspace embeddings for %s", workspace_id)
-        return []
-
-    gap_papers = get_citation_gap_papers(workspace_id, db)
-    if not gap_papers:
-        logger.info("detect_semantic_gaps: no citation-gap papers for %s", workspace_id)
-        return []
-
-    gap_papers, candidate_embeddings = get_candidate_embeddings(gap_papers, db)
-    n = len(gap_papers)
-    if n == 0:
-        return []
-
     workspace_paper_ids = get_workspace_papers(workspace_id, db)
+
+    if not workspace_paper_ids:
+        logger.info("detect_semantic_gaps: empty workspace %s", workspace_id)
+        return []
+
     workspace_titles = [
         p.title
         for p in db.query(Paper).filter(Paper.id.in_(workspace_paper_ids)).all()
     ]
 
-    # Small workspaces: one synthetic cluster (HDBSCAN needs min 3 points).
-    if n < 3:
-        centroid = np.mean(candidate_embeddings, axis=0).reshape(1, -1)
-        sims = cosine_similarity(centroid, workspace_embeddings)
-        cov_score = float(sims.max())
-        clusters = []
-        if cov_score < 0.65:
-            clusters.append({
-                "id": 0,
-                "papers": list(gap_papers),
-                "coverage_score": cov_score,
-            })
-        return _build_semantic_gaps_from_clusters(workspace_id, db, clusters, workspace_titles)
+    if workspace_embeddings.size == 0 or workspace_embeddings.shape[0] == 0:
+        logger.info("detect_semantic_gaps: no workspace embeddings for %s", workspace_id)
+        return []
 
-    labels = run_hdbscan_clustering(candidate_embeddings)
-    coverage = compute_cluster_coverage(labels, candidate_embeddings, workspace_embeddings)
+    result: list = []
 
-    clusters = []
-    for cluster_id, cov_score in coverage.items():
-        if cov_score < 0.65:
-            cluster_papers = [
-                gap_papers[i] for i, label in enumerate(labels) if label == cluster_id
+    gap_papers = get_citation_gap_papers(workspace_id, db)
+    if gap_papers:
+        gap_papers, candidate_embeddings = get_candidate_embeddings(gap_papers, db)
+        n = len(gap_papers)
+        if n == 0:
+            logger.info(
+                "detect_semantic_gaps: citation-gap papers exist but none have embeddings for %s",
+                workspace_id,
+            )
+        elif n < 3:
+            # HDBSCAN needs min_cluster_size=3; use a single cluster. Always surface a card
+            # so the panel does not go empty when coverage is high (e.g. after adding a gap paper).
+            centroid = np.mean(candidate_embeddings, axis=0).reshape(1, -1)
+            sims = cosine_similarity(centroid, workspace_embeddings)
+            cov_score = float(sims.max())
+            clusters = [
+                {
+                    "id": 0,
+                    "papers": list(gap_papers),
+                    "coverage_score": cov_score,
+                }
             ]
-            clusters.append({
-                "id": cluster_id,
-                "papers": cluster_papers,
-                "coverage_score": cov_score,
-            })
+            result = _build_semantic_gaps_from_clusters(workspace_id, db, clusters, workspace_titles)
+        else:
+            labels = run_hdbscan_clustering(candidate_embeddings)
+            coverage = compute_cluster_coverage(
+                labels, candidate_embeddings, workspace_embeddings
+            )
 
-    return _build_semantic_gaps_from_clusters(workspace_id, db, clusters, workspace_titles)
+            clusters = []
+            for cluster_id, cov_score in coverage.items():
+                if cov_score < 0.65:
+                    cluster_papers = [
+                        gap_papers[i] for i, label in enumerate(labels) if label == cluster_id
+                    ]
+                    clusters.append({
+                        "id": cluster_id,
+                        "papers": cluster_papers,
+                        "coverage_score": cov_score,
+                    })
+            result = _build_semantic_gaps_from_clusters(
+                workspace_id, db, clusters, workspace_titles
+            )
+
+    if not result and workspace_embeddings.shape[0] >= 2:
+        logger.info(
+            "detect_semantic_gaps: using workspace-only fallback for %s",
+            workspace_id,
+        )
+        result = _workspace_only_conceptual_gap(
+            workspace_id,
+            db,
+            workspace_embeddings,
+            workspace_paper_ids,
+            workspace_titles,
+        )
+
+    return result

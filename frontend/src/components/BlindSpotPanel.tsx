@@ -198,9 +198,10 @@ export default function BlindSpotPanel({
                   {scanning ? 'Running AI conceptual scan…' : 'Run AI conceptual gap scan'}
                 </button>
                 <p className="text-slate-500 text-[10px] leading-snug">
-                  Conceptual gaps use Gemini on your workspace embeddings. Small workspaces may show a single
-                  cluster when only one or two cited papers have embeddings. Re-running will not wipe prior
-                  results if the new run finds nothing.
+                  Primary signal: papers your workspace cites that are <strong>not</strong> in the workspace
+                  (clustered + labeled with Gemini). If everything cited is already inside, you still get a{' '}
+                  <strong>workspace summary</strong> from how your papers relate in embedding space (2+ papers
+                  with embeddings). Re-running keeps prior Redis results if a run returns nothing.
                 </p>
                 {scanMessage && <p className="text-teal-400 text-xs">{scanMessage}</p>}
               </>
@@ -290,8 +291,10 @@ export default function BlindSpotPanel({
 
             {activeTab === 1 && !loading && gaps.semantic_gaps.length === 0 && !scanning && (
               <p className="text-slate-400 text-xs leading-relaxed">
-                No conceptual gaps yet. Run the scan above, or add papers (URL/DOI from the graph toolbar) so
-                ingest can create citations and embeddings for cited work outside the workspace.
+                No conceptual results yet. Run the scan above. You need at least two workspace papers with
+                embeddings for a summary; external “gap” clustering needs cited papers that are still{' '}
+                <strong>outside</strong> the workspace (see Citation gaps)—adding those papers moves the signal
+                back to how your <em>current</em> set relates.
               </p>
             )}
 
