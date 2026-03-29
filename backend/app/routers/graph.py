@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 import uuid as uuid_lib
 
@@ -9,6 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.dependencies import get_current_user
+
+
+def _parse_embedding(raw):
+    """pgvector returns embeddings as strings via raw SQL; convert to list[float]."""
+    if raw is None:
+        return None
+    if isinstance(raw, (list, np.ndarray)):
+        return raw
+    return json.loads(raw)
 
 
 router = APIRouter(prefix="/graph", tags=["graph"], dependencies=[Depends(get_current_user)])
@@ -86,6 +96,8 @@ def get_graph(
         return {"nodes": [], "edges": [], "clusters": []}
 
     # ── 3. K-means cluster assignment (US 2.9) ────────────────────────────
+    for p in papers:
+        p["embedding"] = _parse_embedding(p["embedding"])
     papers_with_embedding = [p for p in papers if p["embedding"] is not None]
     cluster_assignments: dict[str, int] = {}
 

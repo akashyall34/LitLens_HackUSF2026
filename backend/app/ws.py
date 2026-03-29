@@ -51,6 +51,7 @@ async def websocket_endpoint(websocket: WebSocket, workspace_id: str, token: str
     # Validate JWT from query param
     user_id = decode_access_token(token)
     if not user_id:
+        await websocket.accept()
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
